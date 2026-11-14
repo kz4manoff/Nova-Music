@@ -1,0 +1,211 @@
+package com.novamusic.player.service
+
+import android.app.PendingIntent
+import android.content.Intent
+import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
+import androidx.media3.session.MediaSessionService
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
+import com.novamusic.player.MainActivity
+import com.novamusic.player.NovaMusicApplication
+import com.novamusic.player.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+
+@OptIn(UnstableApi::class)
+class MusicService : MediaSessionService() {
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var mediaSession: MediaSession? = null
+    private lateinit var exoPlayer: ExoPlayer
+
+    override fun onCreate() {
+        super.onCreate()
+        val container = (application as NovaMusicApplication).container
+
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+
+        exoPlayer = ExoPlayer.Builder(this)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .build()
+
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                if (audioSessionId != C.AUDIO_SESSION_ID_UNSET && audioSessionId > 0) {
+                    container.equalizerManager.attachToSession(audioSessionId)
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying) {
+                    persistCurrentPosition(container)
+                }
+            }
+        })
+
+        if (exoPlayer.audioSessionId != C.AUDIO_SESSION_ID_UNSET && exoPlayer.audioSessionId > 0) {
+            container.equalizerManager.attachToSession(exoPlayer.audioSessionId)
+        }
+
+        serviceScope.launch {
+            container.preferencesRepository.appSettings.collectLatest { settings ->
+                exoPlayer.pauseAtEndOfMediaItems = !settings.gaplessPlayback
+            }
+        }
+
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.EXTRA_OPEN_PLAYER, true)
+        }
+        val sessionActivityPendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val sessionCallback = object : MediaSession.Callback {
+            override fun onConnect(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo
+            ): MediaSession.ConnectionResult {
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            }
+
+            override fun onPlaybackResumption(
+                mediaSession: MediaSession,
+                controller: MediaSession.ControllerInfo
+            ): ListenableFuture<MediaItemsWithStartPosition> {
+                val future = SettableFuture.create<MediaItemsWithStartPosition>()
+                serviceScope.launch {
+                    try {
+                        if (container.musicRepository.allSongs.value.isEmpty()) {
+                            container.musicRepository.refreshLibrary()
+                        }
+                        val allSongs = container.musicRepository.allSongs.value
+                        val byId = allSongs.associateBy { it.id }
+                        val saved = container.preferencesRepository.getPlaybackPersistenceState()
+                        val queueSongs = saved.queueSongIds.mapNotNull { byId[it] }
+                            .ifEmpty { listOfNotNull(byId[saved.lastSongId]) }
+
+                        if (queueSongs.isEmpty()) {
+                            future.setException(IllegalStateException("No saved playback queue"))
+                            return@launch
+                        }
+
+                        container.audioPlayerManager.registerSongs(queueSongs)
+                        val startIdx = queueSongs.indexOfFirst { it.id == saved.lastSongId }.coerceAtLeast(0)
+                        val mediaItems = queueSongs.map { song ->
+                            MediaItem.Builder()
+                                .setMediaId(song.id.toString())
+                                .setUri(song.uri)
+                                .setMediaMetadata(
+                                    MediaMetadata.Builder()
+                                        .setTitle(song.title)
+                                        .setArtist(song.artist)
+                                        .setAlbumTitle(song.album)
+                                        .setArtworkUri(song.artworkUri)
+                                        .setIsPlayable(true)
+                                        .setIsBrowsable(false)
+                                        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                                        .build()
+                                )
+                                .build()
+                        }
+                        future.set(
+                            MediaItemsWithStartPosition(
+                                mediaItems,
+                                startIdx,
+                                saved.lastPositionMs.coerceAtLeast(0L)
+                            )
+                        )
+                    } catch (t: Throwable) {
+                        future.setException(t)
+                    }
+                }
+                return future
+            }
+        }
+
+        mediaSession = MediaSession.Builder(this, exoPlayer)
+            .setSessionActivity(sessionActivityPendingIntent)
+            .setCallback(sessionCallback)
+            .build()
+
+        val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
+            .build()
+            .apply {
+                setSmallIcon(R.drawable.ic_nova_notification)
+            }
+        setMediaNotificationProvider(notificationProvider)
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+        return mediaSession
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val container = (application as NovaMusicApplication).container
+        persistCurrentPosition(container)
+        val player = mediaSession?.player
+        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+            stopSelf()
+        }
+    }
+
+    override fun onDestroy() {
+        val container = (application as NovaMusicApplication).container
+        persistCurrentPosition(container)
+        serviceScope.cancel()
+        container.equalizerManager.releaseEffects()
+        mediaSession?.run {
+            player.release()
+            release()
+            mediaSession = null
+        }
+        super.onDestroy()
+    }
+
+    private fun persistCurrentPosition(container: com.novamusic.player.AppContainer) {
+        if (!::exoPlayer.isInitialized) return
+        val songId = exoPlayer.currentMediaItem?.mediaId?.toLongOrNull() ?: return
+        val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+        val queueIds = (0 until exoPlayer.mediaItemCount).mapNotNull {
+            exoPlayer.getMediaItemAt(it).mediaId.toLongOrNull()
+        }
+        val shuffle = exoPlayer.shuffleModeEnabled
+        val repeat = when (exoPlayer.repeatMode) {
+            Player.REPEAT_MODE_ALL -> com.novamusic.player.data.model.RepeatModeOption.ALL
+            Player.REPEAT_MODE_ONE -> com.novamusic.player.data.model.RepeatModeOption.ONE
+            else -> com.novamusic.player.data.model.RepeatModeOption.OFF
+        }
+        serviceScope.launch {
+            container.preferencesRepository.savePlaybackState(
+                songId = songId,
+                positionMs = pos,
+                queueIds = queueIds,
+                shuffleEnabled = shuffle,
+                repeatMode = repeat
+            )
+        }
+    }
+}

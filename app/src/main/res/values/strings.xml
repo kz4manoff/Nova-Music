@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NOVA MUSIC</string>
+    <string name="notification_channel_name">Nova Music Playback</string>
+    <string name="notification_channel_description">Media playback controls and active track information</string>
+    <string name="permission_audio_title">Access Your Music Library</string>
+    <string name="permission_audio_description">NOVA MUSIC needs permission to scan offline audio files stored on your device. No internet access is required.</string>
+    <string name="grant_permission">Grant Permission</string>
+</resources>

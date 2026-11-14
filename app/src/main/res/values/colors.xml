@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nova_black">#080808</color>
+    <color name="nova_surface">#151515</color>
+    <color name="nova_orange">#FF8A32</color>
+    <color name="ic_launcher_background">#080808</color>
+</resources>
