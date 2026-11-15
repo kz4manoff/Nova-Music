@@ -376,6 +376,11 @@ class AudioOutputManager(context: Context) {
 
     private fun unregisterMediaRouter2CallbackIfSupported() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        unregisterMediaRouter2Api30()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun unregisterMediaRouter2Api30() {
         val cb = mediaRouter2ControllerCallback as? MediaRouter2.ControllerCallback ?: return
         runCatching {
             MediaRouter2.getInstance(appContext).unregisterControllerCallback(cb)

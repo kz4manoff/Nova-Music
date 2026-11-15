@@ -2,6 +2,7 @@ package com.novamusic.player
 
 import android.app.Application
 import android.content.Context
+import com.novamusic.player.audio.AudioOutputManager
 import com.novamusic.player.audio.AudioPlayerManager
 import com.novamusic.player.audio.EqualizerManager
 import com.novamusic.player.data.preferences.PreferencesRepository

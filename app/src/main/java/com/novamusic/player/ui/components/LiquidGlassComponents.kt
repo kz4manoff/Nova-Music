@@ -854,6 +854,7 @@ fun LiquidGlassTabBar(
                 // Real-time finger-tracking circular Liquid Glass indicator
                 Box(
                     modifier = Modifier
+                        .align(Alignment.CenterStart)
                         .size(circleDiameter)
                         .graphicsLayer {
                             translationX = lensCenterX
