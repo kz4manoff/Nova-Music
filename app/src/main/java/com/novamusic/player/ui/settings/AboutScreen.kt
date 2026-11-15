@@ -147,7 +147,7 @@ fun AboutScreen(
                         .padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(32.dp),
                     highlighted = true,
-                    tint = palette.primary.copy(alpha = 0.14f),
+                    accentTint = palette.primary.copy(alpha = 0.14f),
                     elevation = 20.dp,
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp)
                 ) {
@@ -243,7 +243,7 @@ fun AboutScreen(
                         LiquidGlassSurface(
                             shape = CircleShape,
                             elevation = 4.dp,
-                            tint = accent.copy(alpha = 0.14f),
+                            accentTint = accent.copy(alpha = 0.14f),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                         ) {
                             Text(
@@ -275,7 +275,7 @@ fun AboutScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(28.dp),
-                    tint = palette.secondary.copy(alpha = 0.10f),
+                    accentTint = palette.secondary.copy(alpha = 0.10f),
                     elevation = 14.dp,
                     contentPadding = PaddingValues(20.dp)
                 ) {
@@ -411,7 +411,7 @@ fun AboutScreen(
                     Icon(
                         imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = null,
-                        tint = accent.copy(alpha = 0.72f),
+                        accentTint = accent.copy(alpha = 0.72f),
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
