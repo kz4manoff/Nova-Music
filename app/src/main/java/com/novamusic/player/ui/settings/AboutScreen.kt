@@ -411,7 +411,7 @@ fun AboutScreen(
                     Icon(
                         imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = null,
-                        accentTint = accent.copy(alpha = 0.72f),
+                        tint = accent.copy(alpha = 0.72f),
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
