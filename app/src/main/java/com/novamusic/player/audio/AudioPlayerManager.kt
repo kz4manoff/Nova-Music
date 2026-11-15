@@ -342,6 +342,13 @@ class AudioPlayerManager(
         }
     }
 
+    fun pausePlayback() {
+        val controller = mediaController ?: return
+        if (controller.isPlaying) {
+            controller.pause()
+        }
+    }
+
     fun seekTo(positionMs: Long) {
         val controller = mediaController ?: return
         val clamped = positionMs.coerceAtLeast(0L)

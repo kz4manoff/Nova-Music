@@ -22,7 +22,9 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
@@ -31,8 +33,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +44,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -78,6 +77,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -95,12 +95,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -110,6 +108,7 @@ import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.ui.components.AddToPlaylistDialog
 import com.novamusic.player.ui.components.AnimatedEqualizerBars
+import com.novamusic.player.ui.components.DefaultNovaGestureConfig
 import com.novamusic.player.ui.components.LiquidGlassArtwork
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassIconButton
@@ -120,12 +119,18 @@ import com.novamusic.player.ui.components.LiquidGlassSurface
 import com.novamusic.player.ui.components.LocalBlurIntensity
 import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.SleepTimerDialog
+import com.novamusic.player.ui.components.SwipeDirection
 import com.novamusic.player.ui.components.TrackInfoDialog
+import com.novamusic.player.ui.components.novaDirectionalDrag
+import com.novamusic.player.ui.components.rememberNovaHaptic
+import com.novamusic.player.ui.components.resolveHorizontalTrackAction
+import com.novamusic.player.ui.components.shouldTriggerVerticalDismiss
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.utils.FormatUtils
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
@@ -133,7 +138,8 @@ fun NowPlayingScreen(
     viewModel: PlayerViewModel,
     onCollapse: () -> Unit,
     onOpenEqualizer: () -> Unit,
-    onOpenLyrics: (Song) -> Unit
+    onOpenLyrics: (Song) -> Unit,
+    onCollapseProgress: (Float) -> Unit = {}
 ) {
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
@@ -149,6 +155,7 @@ fun NowPlayingScreen(
     var showPlaylistDialog by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
     var verticalDragOffset by remember { mutableFloatStateOf(0f) }
+    var artworkSwipeDirection by remember { mutableStateOf(SwipeDirection.NONE) }
 
     val song = playerState.currentSong
     val palette = LocalArtworkPalette.current
@@ -157,15 +164,39 @@ fun NowPlayingScreen(
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val isLandscapeOrTablet = screenWidth >= 640
     val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+    val performHaptic = rememberNovaHaptic()
+    val gestureConfig = DefaultNovaGestureConfig
+
+    val maxCollapseDragPx = with(density) { 420.dp.toPx() }
+    val collapseDistanceThresholdPx = with(density) { gestureConfig.verticalDismissDistanceDp.toPx() }
+    val collapseVelocityThresholdPx = with(density) { gestureConfig.verticalDismissVelocityDpPerSec.dp.toPx() }
 
     val animatedCollapseOffset by animateFloatAsState(
         targetValue = verticalDragOffset,
-        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.84f, stiffness = Spring.StiffnessMedium),
         label = "collapse_drag"
     )
-    val collapseFraction = (animatedCollapseOffset / 340f).coerceIn(0f, 1f)
-    val dragScale = if (reducedMotion) 1f else 1f - collapseFraction * 0.055f
-    val dragCorners = (collapseFraction * 28f).dp
+    val collapseFraction = (animatedCollapseOffset / maxCollapseDragPx).coerceIn(0f, 1f)
+    val dragScale = if (reducedMotion) 1f else 1f - collapseFraction * 0.068f
+    val dragAlpha = (1f - collapseFraction * 0.14f).coerceIn(0.84f, 1f)
+    val dragCorners = (collapseFraction * 30f).dp
+
+    LaunchedEffect(collapseFraction) {
+        onCollapseProgress(collapseFraction)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onCollapseProgress(0f) }
+    }
+
+    val triggerNextTrack: () -> Unit = {
+        artworkSwipeDirection = SwipeDirection.NEXT
+        viewModel.skipToNext()
+    }
+    val triggerPreviousTrack: () -> Unit = {
+        artworkSwipeDirection = SwipeDirection.PREVIOUS
+        viewModel.skipToPrevious()
+    }
 
     Box(
         modifier = Modifier
@@ -174,8 +205,37 @@ fun NowPlayingScreen(
                 translationY = animatedCollapseOffset
                 scaleX = dragScale
                 scaleY = dragScale
+                alpha = dragAlpha
             }
             .clip(RoundedCornerShape(topStart = dragCorners, topEnd = dragCorners))
+            .novaDirectionalDrag(
+                key = "now_playing_dismiss",
+                enableVertical = true,
+                enableHorizontal = false,
+                edgeExclusionDp = gestureConfig.edgeExclusionDp,
+                directionLockRatio = gestureConfig.directionLockRatio,
+                onVerticalDrag = { deltaY ->
+                    val resistance = if (verticalDragOffset < 0f) 0.25f else 1f
+                    verticalDragOffset = (verticalDragOffset + deltaY * resistance).coerceIn(0f, maxCollapseDragPx)
+                },
+                onVerticalEnd = { velocityY ->
+                    if (shouldTriggerVerticalDismiss(
+                            offsetYPx = verticalDragOffset,
+                            velocityYPx = velocityY,
+                            distanceThresholdPx = collapseDistanceThresholdPx,
+                            velocityThresholdPx = collapseVelocityThresholdPx
+                        )
+                    ) {
+                        performHaptic()
+                        verticalDragOffset = 0f
+                        onCollapseProgress(0f)
+                        onCollapse()
+                    } else {
+                        verticalDragOffset = 0f
+                    }
+                },
+                onVerticalCancel = { verticalDragOffset = 0f }
+            )
     ) {
         // Full-bleed deeply blurred album artwork + extracted color ambient light scatter
         val blurScale = LocalBlurIntensity.current
@@ -190,24 +250,10 @@ fun NowPlayingScreen(
                 .fillMaxSize()
                 .padding(horizontal = 24.dp, vertical = 10.dp)
         ) {
-            // Subtle iOS Grabber Pill + Swipe-Down Collapse Gesture
+            // Subtle iOS Grabber Pill (tap/pull-down collapse visual anchor)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (verticalDragOffset > 130f) {
-                                    onCollapse()
-                                }
-                                verticalDragOffset = 0f
-                            },
-                            onDragCancel = { verticalDragOffset = 0f },
-                            onVerticalDrag = { _, dragAmount ->
-                                verticalDragOffset = (verticalDragOffset + dragAmount).coerceIn(0f, 340f)
-                            }
-                        )
-                    }
                     .padding(top = 2.dp, bottom = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -401,8 +447,9 @@ fun NowPlayingScreen(
                             isPlaying = playerState.isPlaying,
                             artworkStyle = artworkStyle,
                             highRes = highResArtwork,
-                            onSwipeNext = viewModel::skipToNext,
-                            onSwipePrevious = viewModel::skipToPrevious,
+                            transitionDirection = artworkSwipeDirection,
+                            onSwipeNext = triggerNextTrack,
+                            onSwipePrevious = triggerPreviousTrack,
                             modifier = Modifier
                                 .fillMaxHeight(0.86f)
                                 .aspectRatio(1f)
@@ -421,9 +468,9 @@ fun NowPlayingScreen(
                             onToggleFavorite = { viewModel.toggleFavorite(song.id) },
                             onSeek = viewModel::seekTo,
                             onToggleShuffle = viewModel::toggleShuffle,
-                            onPrevious = viewModel::skipToPrevious,
+                            onPrevious = triggerPreviousTrack,
                             onTogglePlayPause = viewModel::togglePlayPause,
-                            onNext = viewModel::skipToNext,
+                            onNext = triggerNextTrack,
                             onCycleRepeat = viewModel::cycleRepeatMode,
                             onOpenQueue = { showQueueSheet = true },
                             onOpenLyrics = { onOpenLyrics(song) },
@@ -450,8 +497,9 @@ fun NowPlayingScreen(
                             isPlaying = playerState.isPlaying,
                             artworkStyle = artworkStyle,
                             highRes = highResArtwork,
-                            onSwipeNext = viewModel::skipToNext,
-                            onSwipePrevious = viewModel::skipToPrevious,
+                            transitionDirection = artworkSwipeDirection,
+                            onSwipeNext = triggerNextTrack,
+                            onSwipePrevious = triggerPreviousTrack,
                             modifier = Modifier
                                 .widthIn(max = 368.dp)
                                 .fillMaxWidth(0.95f)
@@ -469,9 +517,9 @@ fun NowPlayingScreen(
                         onToggleFavorite = { viewModel.toggleFavorite(song.id) },
                         onSeek = viewModel::seekTo,
                         onToggleShuffle = viewModel::toggleShuffle,
-                        onPrevious = viewModel::skipToPrevious,
+                        onPrevious = triggerPreviousTrack,
                         onTogglePlayPause = viewModel::togglePlayPause,
-                        onNext = viewModel::skipToNext,
+                        onNext = triggerNextTrack,
                         onCycleRepeat = viewModel::cycleRepeatMode,
                         onOpenQueue = { showQueueSheet = true },
                         onOpenLyrics = { onOpenLyrics(song) },
@@ -530,44 +578,72 @@ private fun SwipeableArtworkStage(
     isPlaying: Boolean,
     artworkStyle: ArtworkStyle,
     highRes: Boolean,
+    transitionDirection: SwipeDirection,
     onSwipeNext: () -> Unit,
     onSwipePrevious: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+    val performHaptic = rememberNovaHaptic()
+    val gestureConfig = DefaultNovaGestureConfig
+
+    val swipeDistanceThresholdPx = with(density) { gestureConfig.horizontalSwipeDistanceDp.toPx() }
+    val swipeVelocityThresholdPx = with(density) { gestureConfig.horizontalSwipeVelocityDpPerSec.dp.toPx() }
+    val maxDragPx = swipeDistanceThresholdPx * 2.1f
+
     var dragOffsetX by remember(song.id) { mutableFloatStateOf(0f) }
     val animatedOffset by animateFloatAsState(
         targetValue = dragOffsetX,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMedium),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.76f, stiffness = Spring.StiffnessMedium),
         label = "artwork_drag"
     )
     val playStateScale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.91f,
-        animationSpec = spring(
+        animationSpec = if (reducedMotion) snap() else spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
             stiffness = Spring.StiffnessMediumLow
         ),
         label = "artwork_play_scale"
     )
+    val dragProgress = (abs(animatedOffset) / maxDragPx).coerceIn(0f, 1f)
+    val gestureScale = if (reducedMotion) 1f else 1f - dragProgress * 0.04f
+    val gestureTiltY = if (reducedMotion) 0f else (animatedOffset / maxDragPx).coerceIn(-1f, 1f) * 6.5f
 
     Box(
         modifier = modifier
-            .offset { IntOffset(animatedOffset.roundToInt(), 0) }
-            .scale(playStateScale)
-            .pointerInput(song.id) {
-                detectHorizontalDragGestures(
-                    onDragEnd = {
-                        when {
-                            dragOffsetX < -115f -> onSwipeNext()
-                            dragOffsetX > 115f -> onSwipePrevious()
+            .graphicsLayer {
+                translationX = animatedOffset
+                rotationY = gestureTiltY
+                scaleX = playStateScale * gestureScale
+                scaleY = playStateScale * gestureScale
+                cameraDistance = 14f * density.density
+            }
+            .novaDirectionalDrag(
+                key = song.id,
+                enableHorizontal = true,
+                enableVertical = false,
+                edgeExclusionDp = gestureConfig.edgeExclusionDp,
+                directionLockRatio = gestureConfig.directionLockRatio,
+                onHorizontalDrag = { deltaX ->
+                    dragOffsetX = (dragOffsetX + deltaX * 0.78f).coerceIn(-maxDragPx, maxDragPx)
+                },
+                onHorizontalEnd = { velocityX ->
+                    when (resolveHorizontalTrackAction(dragOffsetX, velocityX, swipeDistanceThresholdPx, swipeVelocityThresholdPx)) {
+                        SwipeDirection.NEXT -> {
+                            performHaptic()
+                            onSwipeNext()
                         }
-                        dragOffsetX = 0f
-                    },
-                    onDragCancel = { dragOffsetX = 0f },
-                    onHorizontalDrag = { _, dragAmount ->
-                        dragOffsetX = (dragOffsetX + dragAmount * 0.65f).coerceIn(-220f, 220f)
+                        SwipeDirection.PREVIOUS -> {
+                            performHaptic()
+                            onSwipePrevious()
+                        }
+                        SwipeDirection.NONE -> Unit
                     }
-                )
-            },
+                    dragOffsetX = 0f
+                },
+                onHorizontalCancel = { dragOffsetX = 0f }
+            ),
         contentAlignment = Alignment.Center
     ) {
         ArtworkShowcase(
@@ -575,6 +651,7 @@ private fun SwipeableArtworkStage(
             isPlaying = isPlaying,
             artworkStyle = artworkStyle,
             highRes = highRes,
+            transitionDirection = transitionDirection,
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -586,11 +663,13 @@ private fun ArtworkShowcase(
     isPlaying: Boolean,
     artworkStyle: ArtworkStyle,
     highRes: Boolean,
+    transitionDirection: SwipeDirection,
     modifier: Modifier = Modifier
 ) {
     val rotation = remember { Animatable(0f) }
     val palette = LocalArtworkPalette.current
     val novaColors = LocalNovaColors.current
+    val reducedMotion = LocalReducedMotion.current
 
     LaunchedEffect(isPlaying, artworkStyle) {
         if (isPlaying && artworkStyle == ArtworkStyle.ROTATING_VINYL) {
@@ -618,10 +697,46 @@ private fun ArtworkShowcase(
     AnimatedContent(
         targetState = song.id,
         transitionSpec = {
-            (fadeIn(tween(380)) + scaleIn(
-                initialScale = 0.90f,
-                animationSpec = spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow)
-            )) togetherWith (fadeOut(tween(240)) + scaleOut(targetScale = 0.94f, animationSpec = tween(240)))
+            if (reducedMotion) {
+                fadeIn(tween(90)) togetherWith fadeOut(tween(90))
+            } else {
+                when (transitionDirection) {
+                    SwipeDirection.NEXT -> {
+                        (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                            slideInHorizontally(
+                                animationSpec = spring(dampingRatio = 0.84f, stiffness = Spring.StiffnessMediumLow),
+                                initialOffsetX = { (it * 0.36f).roundToInt() }
+                            ) +
+                            scaleIn(initialScale = 0.92f, animationSpec = tween(300))) togetherWith
+                            (fadeOut(tween(200)) +
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { -(it * 0.28f).roundToInt() }
+                                ) +
+                                scaleOut(targetScale = 0.90f, animationSpec = tween(220)))
+                    }
+                    SwipeDirection.PREVIOUS -> {
+                        (fadeIn(tween(300, easing = FastOutSlowInEasing)) +
+                            slideInHorizontally(
+                                animationSpec = spring(dampingRatio = 0.84f, stiffness = Spring.StiffnessMediumLow),
+                                initialOffsetX = { -(it * 0.36f).roundToInt() }
+                            ) +
+                            scaleIn(initialScale = 0.92f, animationSpec = tween(300))) togetherWith
+                            (fadeOut(tween(200)) +
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { (it * 0.28f).roundToInt() }
+                                ) +
+                                scaleOut(targetScale = 0.90f, animationSpec = tween(220)))
+                    }
+                    SwipeDirection.NONE -> {
+                        (fadeIn(tween(340)) + scaleIn(
+                            initialScale = 0.91f,
+                            animationSpec = spring(dampingRatio = 0.80f, stiffness = Spring.StiffnessMediumLow)
+                        )) togetherWith (fadeOut(tween(210)) + scaleOut(targetScale = 0.94f, animationSpec = tween(210)))
+                    }
+                }
+            }
         },
         label = "artwork_transition"
     ) { _ ->

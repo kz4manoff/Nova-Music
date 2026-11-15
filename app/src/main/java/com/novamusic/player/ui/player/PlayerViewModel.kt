@@ -92,6 +92,7 @@ class PlayerViewModel(
     }
 
     fun togglePlayPause() = playerManager.togglePlayPause()
+    fun pausePlayback() = playerManager.pausePlayback()
     fun seekTo(positionMs: Long) = playerManager.seekTo(positionMs)
     fun skipToNext() = playerManager.skipToNext()
     fun skipToPrevious() = playerManager.skipToPrevious()

@@ -39,7 +39,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -1170,12 +1169,14 @@ fun LiquidGlassMiniPlayer(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onOpenNowPlaying: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDismissMiniPlayer: (() -> Unit)? = null
 ) {
     val song = playerState.currentSong
     val reducedMotion = LocalReducedMotion.current
     val animStyle = LocalPlayerAnimationStyle.current
     val performHaptic = rememberNovaHaptic()
+    val gestureConfig = DefaultNovaGestureConfig
 
     AnimatedVisibility(
         visible = song != null,
@@ -1228,18 +1229,40 @@ fun LiquidGlassMiniPlayer(
                 0f
             }
 
-            var dragX by remember { mutableFloatStateOf(0f) }
-            var dragY by remember { mutableFloatStateOf(0f) }
+            val miniMaxPullUpPx = with(density) { 80.dp.toPx() }
+            val miniMaxPullDownPx = with(density) { 96.dp.toPx() }
+            val miniExpandThresholdPx = with(density) { gestureConfig.miniPlayerExpandDistanceDp.toPx() }
+            val miniDismissThresholdPx = with(density) { gestureConfig.miniPlayerDismissDistanceDp.toPx() }
+            val miniSwipeHorizThresholdPx = with(density) { 54.dp.toPx() }
+            val miniHorizVelPx = with(density) { gestureConfig.horizontalSwipeVelocityDpPerSec.dp.toPx() }
+            val miniVertVelPx = with(density) { gestureConfig.miniPlayerSwipeVelocityDpPerSec.dp.toPx() }
+
+            var dragX by remember(song.id) { mutableFloatStateOf(0f) }
+            var dragY by remember(song.id) { mutableFloatStateOf(0f) }
             val animatedDragX by animateFloatAsState(
-                targetValue = dragX * 0.28f,
-                animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.75f, stiffness = 420f),
+                targetValue = dragX * 0.34f,
+                animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.76f, stiffness = 420f),
                 label = "lg_mini_drag_x"
             )
             val animatedDragY by animateFloatAsState(
-                targetValue = (dragY * 0.28f).coerceIn(-26f, 0f),
-                animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.75f, stiffness = 420f),
+                targetValue = dragY * 0.42f,
+                animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.76f, stiffness = 420f),
                 label = "lg_mini_drag_y"
             )
+            val verticalDragFraction = if (animatedDragY > 0f) {
+                (animatedDragY / (miniMaxPullDownPx * 0.42f)).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            val expandLiftFraction = if (animatedDragY < 0f) {
+                (-animatedDragY / (miniMaxPullUpPx * 0.42f)).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            val miniGestureScale = if (reducedMotion) 1f else {
+                1f + expandLiftFraction * 0.022f - verticalDragFraction * 0.045f
+            }
+            val miniGestureAlpha = (1f - verticalDragFraction * 0.45f).coerceIn(0.45f, 1f)
 
             LiquidGlassSurface(
                 modifier = Modifier
@@ -1247,37 +1270,55 @@ fun LiquidGlassMiniPlayer(
                     .graphicsLayer {
                         translationX = animatedDragX
                         translationY = animatedDragY + floatingYPx
+                        scaleX = miniGestureScale
+                        scaleY = miniGestureScale
+                        alpha = miniGestureAlpha
                     }
                     .padding(horizontal = 14.dp, vertical = 6.dp)
-                    .pointerInput(song.id) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (dragX < -65f) {
+                    .novaDirectionalDrag(
+                        key = song.id,
+                        enableHorizontal = true,
+                        enableVertical = true,
+                        edgeExclusionDp = gestureConfig.edgeExclusionDp,
+                        directionLockRatio = gestureConfig.directionLockRatio,
+                        onHorizontalDrag = { deltaX ->
+                            dragX = (dragX + deltaX).coerceIn(-miniSwipeHorizThresholdPx * 2.2f, miniSwipeHorizThresholdPx * 2.2f)
+                        },
+                        onHorizontalEnd = { velocityX ->
+                            when (resolveHorizontalTrackAction(dragX, velocityX, miniSwipeHorizThresholdPx, miniHorizVelPx)) {
+                                SwipeDirection.NEXT -> {
                                     performHaptic()
                                     onNext()
-                                } else if (dragX > 65f) {
+                                }
+                                SwipeDirection.PREVIOUS -> {
                                     performHaptic()
                                     onPrevious()
                                 }
-                                dragX = 0f
-                            },
-                            onDragCancel = { dragX = 0f },
-                            onHorizontalDrag = { _, dragAmount -> dragX = (dragX + dragAmount).coerceIn(-160f, 160f) }
-                        )
-                    }
-                    .pointerInput(song.id) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (dragY < -50f) {
+                                SwipeDirection.NONE -> Unit
+                            }
+                            dragX = 0f
+                        },
+                        onHorizontalCancel = { dragX = 0f },
+                        onVerticalDrag = { deltaY ->
+                            val maxDown = if (onDismissMiniPlayer != null) miniMaxPullDownPx else 24f
+                            dragY = (dragY + deltaY).coerceIn(-miniMaxPullUpPx, maxDown)
+                        },
+                        onVerticalEnd = { velocityY ->
+                            when {
+                                shouldTriggerMiniPlayerExpand(dragY, velocityY, miniExpandThresholdPx, miniVertVelPx) -> {
                                     performHaptic()
                                     onOpenNowPlaying()
                                 }
-                                dragY = 0f
-                            },
-                            onDragCancel = { dragY = 0f },
-                            onVerticalDrag = { _, dragAmount -> dragY = (dragY + dragAmount).coerceIn(-140f, 30f) }
-                        )
-                    },
+                                onDismissMiniPlayer != null &&
+                                    shouldTriggerVerticalDismiss(dragY, velocityY, miniDismissThresholdPx, miniVertVelPx) -> {
+                                    performHaptic()
+                                    onDismissMiniPlayer()
+                                }
+                            }
+                            dragY = 0f
+                        },
+                        onVerticalCancel = { dragY = 0f }
+                    ),
                 shape = RoundedCornerShape(24.dp),
                 accentTint = palette.primary,
                 highlighted = true,

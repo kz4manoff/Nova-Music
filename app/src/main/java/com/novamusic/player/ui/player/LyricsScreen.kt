@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -41,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,20 +50,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.data.model.LyricsSource
 import com.novamusic.player.data.model.Song
+import com.novamusic.player.ui.components.DefaultNovaGestureConfig
 import com.novamusic.player.ui.components.LiquidGlassArtwork
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassButton
 import com.novamusic.player.ui.components.LiquidGlassIconButton
 import com.novamusic.player.ui.components.LiquidGlassSurface
 import com.novamusic.player.ui.components.LiquidGlassTopBar
+import com.novamusic.player.ui.components.LocalReducedMotion
+import com.novamusic.player.ui.components.novaDirectionalDrag
+import com.novamusic.player.ui.components.rememberNovaHaptic
+import com.novamusic.player.ui.components.shouldTriggerVerticalDismiss
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.utils.FormatUtils
@@ -81,8 +95,85 @@ fun LyricsScreen(
 
     val accent = MaterialTheme.colorScheme.primary
     val novaColors = LocalNovaColors.current
+    val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+    val performHaptic = rememberNovaHaptic()
+    val gestureConfig = DefaultNovaGestureConfig
 
     var showEditorDialog by remember { mutableStateOf(false) }
+    var verticalDragOffset by remember { mutableFloatStateOf(0f) }
+
+    val maxDismissDragPx = with(density) { 420.dp.toPx() }
+    val dismissDistanceThresholdPx = with(density) { gestureConfig.verticalDismissDistanceDp.toPx() }
+    val dismissVelocityThresholdPx = with(density) { gestureConfig.verticalDismissVelocityDpPerSec.dp.toPx() }
+
+    val animatedDragOffset by animateFloatAsState(
+        targetValue = verticalDragOffset,
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.84f, stiffness = Spring.StiffnessMedium),
+        label = "lyrics_collapse_drag"
+    )
+    val collapseFraction = (animatedDragOffset / maxDismissDragPx).coerceIn(0f, 1f)
+    val dragScale = if (reducedMotion) 1f else 1f - collapseFraction * 0.06f
+    val dragAlpha = (1f - collapseFraction * 0.14f).coerceIn(0.84f, 1f)
+    val dragCorners = (collapseFraction * 30f).dp
+
+    val finishVerticalDismiss: (Float) -> Unit = { velocityY ->
+        if (shouldTriggerVerticalDismiss(
+                offsetYPx = verticalDragOffset,
+                velocityYPx = velocityY,
+                distanceThresholdPx = dismissDistanceThresholdPx,
+                velocityThresholdPx = dismissVelocityThresholdPx
+            )
+        ) {
+            performHaptic()
+            verticalDragOffset = 0f
+            onBack()
+        } else {
+            verticalDragOffset = 0f
+        }
+    }
+
+    // Allows normal LazyColumn lyrics scrolling while supporting pull-down-to-dismiss when at the very top.
+    val lyricsNestedScroll = remember(listState, maxDismissDragPx, dismissDistanceThresholdPx, dismissVelocityThresholdPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (verticalDragOffset > 0f && available.y < 0f && source == NestedScrollSource.UserInput) {
+                    val consumedY = maxOf(available.y, -verticalDragOffset)
+                    verticalDragOffset = (verticalDragOffset + consumedY).coerceAtLeast(0f)
+                    return Offset(0f, consumedY)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                if (atTop && available.y > 0f && source == NestedScrollSource.UserInput) {
+                    verticalDragOffset = (verticalDragOffset + available.y).coerceIn(0f, maxDismissDragPx)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (verticalDragOffset > 0f) {
+                    finishVerticalDismiss(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (verticalDragOffset > 0f) {
+                    finishVerticalDismiss(available.y)
+                }
+                return Velocity.Zero
+            }
+        }
+    }
 
     val lrcPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -102,7 +193,29 @@ fun LyricsScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationY = animatedDragOffset
+                scaleX = dragScale
+                scaleY = dragScale
+                alpha = dragAlpha
+            }
+            .clip(RoundedCornerShape(topStart = dragCorners, topEnd = dragCorners))
+            .novaDirectionalDrag(
+                key = "lyrics_dismiss",
+                enableVertical = true,
+                enableHorizontal = false,
+                edgeExclusionDp = gestureConfig.edgeExclusionDp,
+                directionLockRatio = gestureConfig.directionLockRatio,
+                onVerticalDrag = { deltaY ->
+                    verticalDragOffset = (verticalDragOffset + deltaY).coerceIn(0f, maxDismissDragPx)
+                },
+                onVerticalEnd = { velocityY -> finishVerticalDismiss(velocityY) },
+                onVerticalCancel = { verticalDragOffset = 0f }
+            )
+    ) {
         LiquidGlassBackdrop(
             artworkUri = song.artworkUri,
             isPlaying = playerState.isPlaying,
@@ -227,7 +340,9 @@ fun LyricsScreen(
                 // Apple Music Style Synchronized Open Floating Lyrics
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .nestedScroll(lyricsNestedScroll),
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {

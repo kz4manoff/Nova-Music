@@ -38,8 +38,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -113,6 +115,9 @@ fun NovaMainAppShell(
     val appSettings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
     var showNowPlaying by remember { mutableStateOf(openNowPlayingTrigger > 0) }
     var lyricsTargetSong by remember { mutableStateOf<Song?>(null) }
+    var nowPlayingCollapseProgress by remember { mutableFloatStateOf(0f) }
+    var miniPlayerDismissed by rememberSaveable { mutableStateOf(false) }
+    var lastObservedSongId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     val artworkPalette = rememberArtworkPalette(
         artworkUri = playerState.currentSong?.artworkUri,
@@ -125,10 +130,30 @@ fun NovaMainAppShell(
         }
     }
 
+    LaunchedEffect(showNowPlaying) {
+        if (!showNowPlaying) {
+            nowPlayingCollapseProgress = 0f
+        }
+    }
+
+    LaunchedEffect(playerState.currentSong?.id, playerState.isPlaying) {
+        val currentId = playerState.currentSong?.id
+        if (currentId == null) {
+            miniPlayerDismissed = false
+            lastObservedSongId = null
+        } else {
+            if (currentId != lastObservedSongId || playerState.isPlaying) {
+                miniPlayerDismissed = false
+            }
+            lastObservedSongId = currentId
+        }
+    }
+
     BackHandler(enabled = lyricsTargetSong != null) {
         lyricsTargetSong = null
     }
     BackHandler(enabled = showNowPlaying && lyricsTargetSong == null) {
+        nowPlayingCollapseProgress = 0f
         showNowPlaying = false
     }
 
@@ -156,11 +181,21 @@ fun NovaMainAppShell(
         }
     }
 
-    val miniPlayerHeight = if (playerState.currentSong != null) 86.dp else 0.dp
+    val isMiniPlayerVisible = playerState.currentSong != null && !miniPlayerDismissed
+    val miniPlayerHeight = if (isMiniPlayerVisible) 86.dp else 0.dp
     val reducedMotion = rememberReducedMotion() || !appSettings.interfaceAnimations
     val overlayOpen = showNowPlaying || lyricsTargetSong != null
+    val activeCollapseFraction = if (showNowPlaying && lyricsTargetSong == null) {
+        nowPlayingCollapseProgress.coerceIn(0f, 1f)
+    } else {
+        0f
+    }
     val bgScale by animateFloatAsState(
-        targetValue = if (overlayOpen && !reducedMotion) 0.945f else 1f,
+        targetValue = if (overlayOpen && !reducedMotion) {
+            0.945f + (1f - 0.945f) * activeCollapseFraction
+        } else {
+            1f
+        },
         animationSpec = if (reducedMotion) snap() else spring(
             dampingRatio = 0.86f,
             stiffness = Spring.StiffnessMediumLow
@@ -168,7 +203,11 @@ fun NovaMainAppShell(
         label = "shell_bg_scale"
     )
     val bgAlpha by animateFloatAsState(
-        targetValue = if (overlayOpen) 0.65f else 1f,
+        targetValue = if (overlayOpen) {
+            0.65f + (1f - 0.65f) * activeCollapseFraction
+        } else {
+            1f
+        },
         animationSpec = if (reducedMotion) snap() else tween(260, easing = FastOutSlowInEasing),
         label = "shell_bg_alpha"
     )
@@ -216,11 +255,22 @@ fun NovaMainAppShell(
                             .navigationBarsPadding()
                     ) {
                         LiquidGlassMiniPlayer(
-                            playerState = playerState,
+                            playerState = if (miniPlayerDismissed) {
+                                playerState.copy(currentSong = null)
+                            } else {
+                                playerState
+                            },
                             onTogglePlayPause = playerViewModel::togglePlayPause,
                             onPrevious = playerViewModel::skipToPrevious,
                             onNext = playerViewModel::skipToNext,
-                            onOpenNowPlaying = { showNowPlaying = true }
+                            onOpenNowPlaying = {
+                                miniPlayerDismissed = false
+                                showNowPlaying = true
+                            },
+                            onDismissMiniPlayer = {
+                                miniPlayerDismissed = true
+                                playerViewModel.pausePlayback()
+                            }
                         )
 
                         LiquidGlassTabBar(
@@ -534,12 +584,17 @@ fun NovaMainAppShell(
                 ) {
                     NowPlayingScreen(
                         viewModel = playerViewModel,
-                        onCollapse = { showNowPlaying = false },
+                        onCollapse = {
+                            nowPlayingCollapseProgress = 0f
+                            showNowPlaying = false
+                        },
                         onOpenEqualizer = {
+                            nowPlayingCollapseProgress = 0f
                             showNowPlaying = false
                             navController.navigate(NovaDestinations.EQUALIZER)
                         },
-                        onOpenLyrics = { song -> lyricsTargetSong = song }
+                        onOpenLyrics = { song -> lyricsTargetSong = song },
+                        onCollapseProgress = { progress -> nowPlayingCollapseProgress = progress }
                     )
                 }
             }
