@@ -104,10 +104,13 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.data.model.ArtworkStyle
 import com.novamusic.player.data.model.AudioFileInfo
+import com.novamusic.player.data.model.AudioOutputDevice
 import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.ui.components.AddToPlaylistDialog
 import com.novamusic.player.ui.components.AnimatedEqualizerBars
+import com.novamusic.player.ui.components.AudioOutputSwitcherSheet
+import com.novamusic.player.ui.components.AudioOutputTriggerPill
 import com.novamusic.player.ui.components.DefaultNovaGestureConfig
 import com.novamusic.player.ui.components.LiquidGlassArtwork
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
@@ -121,6 +124,7 @@ import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.SleepTimerDialog
 import com.novamusic.player.ui.components.SwipeDirection
 import com.novamusic.player.ui.components.TrackInfoDialog
+import com.novamusic.player.ui.components.audioOutputIcon
 import com.novamusic.player.ui.components.novaDirectionalDrag
 import com.novamusic.player.ui.components.rememberNovaHaptic
 import com.novamusic.player.ui.components.resolveHorizontalTrackAction
@@ -149,8 +153,10 @@ fun NowPlayingScreen(
     val currentAudioInfo by viewModel.currentAudioInfo.collectAsStateWithLifecycle()
     val trackInfoDialog by viewModel.trackInfoDialog.collectAsStateWithLifecycle()
     val isEqEnabled by viewModel.isEqualizerEnabled.collectAsStateWithLifecycle()
+    val audioRoutingState by viewModel.audioRoutingState.collectAsStateWithLifecycle()
 
     var showQueueSheet by remember { mutableStateOf(false) }
+    var showOutputSheet by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
     var showPlaylistDialog by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
@@ -161,6 +167,7 @@ fun NowPlayingScreen(
     val palette = LocalArtworkPalette.current
     val accent = MaterialTheme.colorScheme.primary
     val novaColors = LocalNovaColors.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val isLandscapeOrTablet = screenWidth >= 640
     val reducedMotion = LocalReducedMotion.current
@@ -332,6 +339,18 @@ fun NowPlayingScreen(
                         modifier = Modifier.background(novaColors.elevatedSurface)
                     ) {
                         DropdownMenuItem(
+                            leadingIcon = {
+                                val outIcon = audioRoutingState.activeDevice?.let { audioOutputIcon(it.type) }
+                                    ?: Icons.Rounded.Equalizer
+                                Icon(outIcon, contentDescription = null, tint = accent)
+                            },
+                            text = { Text("Audio Output (${audioRoutingState.activeDevice?.name ?: "Speaker"})") },
+                            onClick = {
+                                showOptionsMenu = false
+                                showOutputSheet = true
+                            }
+                        )
+                        DropdownMenuItem(
                             leadingIcon = { Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = accent) },
                             text = { Text(if (isEqEnabled) "Equalizer DSP (Active)" else "Equalizer & DSP") },
                             onClick = {
@@ -463,6 +482,7 @@ fun NowPlayingScreen(
                             song = song,
                             audioInfo = currentAudioInfo,
                             playerState = playerState,
+                            activeOutputDevice = audioRoutingState.activeDevice,
                             isFavorite = song.id in favoriteIds,
                             isEqEnabled = isEqEnabled,
                             onToggleFavorite = { viewModel.toggleFavorite(song.id) },
@@ -474,7 +494,8 @@ fun NowPlayingScreen(
                             onCycleRepeat = viewModel::cycleRepeatMode,
                             onOpenQueue = { showQueueSheet = true },
                             onOpenLyrics = { onOpenLyrics(song) },
-                            onOpenEqualizer = onOpenEqualizer
+                            onOpenEqualizer = onOpenEqualizer,
+                            onOpenAudioOutput = { showOutputSheet = true }
                         )
                     }
                 }
@@ -512,6 +533,7 @@ fun NowPlayingScreen(
                         song = song,
                         audioInfo = currentAudioInfo,
                         playerState = playerState,
+                        activeOutputDevice = audioRoutingState.activeDevice,
                         isFavorite = song.id in favoriteIds,
                         isEqEnabled = isEqEnabled,
                         onToggleFavorite = { viewModel.toggleFavorite(song.id) },
@@ -523,7 +545,8 @@ fun NowPlayingScreen(
                         onCycleRepeat = viewModel::cycleRepeatMode,
                         onOpenQueue = { showQueueSheet = true },
                         onOpenLyrics = { onOpenLyrics(song) },
-                        onOpenEqualizer = onOpenEqualizer
+                        onOpenEqualizer = onOpenEqualizer,
+                        onOpenAudioOutput = { showOutputSheet = true }
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -568,6 +591,18 @@ fun NowPlayingScreen(
             song = song,
             fileInfo = trackInfoDialog,
             onDismiss = viewModel::clearTrackInfoDialog
+        )
+    }
+
+    if (showOutputSheet) {
+        AudioOutputSwitcherSheet(
+            routingState = audioRoutingState,
+            isPlaying = playerState.isPlaying,
+            onSelectDevice = viewModel::selectAudioOutput,
+            onRefreshPermissions = viewModel::refreshAudioDevices,
+            onOpenSystemOutput = { viewModel.openSystemSoundOutputPanel(context) },
+            onOpenBluetoothSettings = { viewModel.openBluetoothSettings(context) },
+            onDismiss = { showOutputSheet = false }
         )
     }
 }
@@ -915,6 +950,7 @@ private fun AppleMusicPlayerControlsBlock(
     song: Song,
     audioInfo: AudioFileInfo?,
     playerState: PlayerUiState,
+    activeOutputDevice: AudioOutputDevice?,
     isFavorite: Boolean,
     isEqEnabled: Boolean,
     onToggleFavorite: () -> Unit,
@@ -926,7 +962,8 @@ private fun AppleMusicPlayerControlsBlock(
     onCycleRepeat: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenLyrics: () -> Unit,
-    onOpenEqualizer: () -> Unit
+    onOpenEqualizer: () -> Unit,
+    onOpenAudioOutput: () -> Unit
 ) {
     val palette = LocalArtworkPalette.current
     val accent = MaterialTheme.colorScheme.primary
@@ -1130,10 +1167,10 @@ private fun AppleMusicPlayerControlsBlock(
 
         Spacer(modifier = Modifier.height(22.dp))
 
-        // BOTTOM: Floating Glass Lyrics & Queue Controls (+ quick DSP pill)
+        // BOTTOM: Floating Glass Lyrics, Smart Audio Output & Queue Controls (+ quick DSP pill)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             LiquidGlassSurface(
@@ -1154,14 +1191,22 @@ private fun AppleMusicPlayerControlsBlock(
                         tint = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Lyrics",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1
                     )
                 }
             }
+
+            AudioOutputTriggerPill(
+                activeDevice = activeOutputDevice,
+                isPlaying = playerState.isPlaying,
+                onClick = onOpenAudioOutput,
+                modifier = Modifier.weight(1.25f)
+            )
 
             AnimatedVisibility(
                 visible = isEqEnabled,
@@ -1197,9 +1242,9 @@ private fun AppleMusicPlayerControlsBlock(
                         tint = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.size(19.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (playerState.queue.isNotEmpty()) "Queue (${playerState.queue.size})" else "Queue",
+                        text = if (playerState.queue.isNotEmpty()) "${playerState.queue.size}" else "Queue",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onBackground,
                         maxLines = 1

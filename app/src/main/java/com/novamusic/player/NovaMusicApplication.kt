@@ -20,6 +20,7 @@ class AppContainer(context: Context) {
         preferences = preferencesRepository
     )
     val equalizerManager: EqualizerManager = EqualizerManager(preferencesRepository)
+    val audioOutputManager: AudioOutputManager = AudioOutputManager(appContext)
     val audioPlayerManager: AudioPlayerManager = AudioPlayerManager(
         context = appContext,
         repository = musicRepository,
@@ -34,5 +35,6 @@ class NovaMusicApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        container.audioOutputManager.start()
     }
 }

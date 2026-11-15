@@ -125,6 +125,7 @@ class MainActivity : AppCompatActivity() {
                     if (granted) {
                         initializeLibraryAndRestore(container)
                     }
+                    container.audioOutputManager.refreshPermissionsAndDevices()
                 }
 
                 if (hasAudioPermissionState) {
@@ -155,10 +156,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        val container = (application as NovaMusicApplication).container
+        container.audioOutputManager.refreshPermissionsAndDevices()
         val grantedNow = PermissionHelper.hasAudioPermission(this)
         if (grantedNow && !hasAudioPermissionState) {
             hasAudioPermissionState = true
-            val container = (application as NovaMusicApplication).container
             initializeLibraryAndRestore(container)
         }
     }

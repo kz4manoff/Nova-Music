@@ -228,4 +228,40 @@ class NovaGesturesTest {
             )
         )
     }
+
+    @Test
+    fun `clampFingerSlot maps pointer X smoothly across pill tabs and clamps bounds`() {
+        // 5 tabs across 500px inner width (512px total with 6px padding each side) -> 100px per slot
+        val width = 512f
+        val pad = 6f
+
+        assertEquals(0f, clampFingerSlot(pointerX = 0f, containerWidthPx = width, horizontalPaddingPx = pad, tabCount = 5), 0.001f)
+        assertEquals(0f, clampFingerSlot(pointerX = 56f, containerWidthPx = width, horizontalPaddingPx = pad, tabCount = 5), 0.001f)
+        assertEquals(2f, clampFingerSlot(pointerX = 256f, containerWidthPx = width, horizontalPaddingPx = pad, tabCount = 5), 0.001f)
+        assertEquals(4f, clampFingerSlot(pointerX = 456f, containerWidthPx = width, horizontalPaddingPx = pad, tabCount = 5), 0.001f)
+        assertEquals(4f, clampFingerSlot(pointerX = 600f, containerWidthPx = width, horizontalPaddingPx = pad, tabCount = 5), 0.001f)
+    }
+
+    @Test
+    fun `applyMagneticSlotPull gently pulls near icon center without losing continuity`() {
+        assertEquals(2.0f, applyMagneticSlotPull(2.0f), 0.001f)
+        val pulled = applyMagneticSlotPull(2.15f)
+        assertTrue(pulled > 2.0f && pulled < 2.15f)
+    }
+
+    @Test
+    fun `iconProximityWeight peaks over centered icon and falls off smoothly`() {
+        assertEquals(1.0f, iconProximityWeight(indicatorSlot = 2.0f, iconIndex = 2), 0.001f)
+        assertEquals(0.5f, iconProximityWeight(indicatorSlot = 2.5f, iconIndex = 2), 0.001f)
+        assertEquals(0.5f, iconProximityWeight(indicatorSlot = 2.5f, iconIndex = 3), 0.001f)
+        assertEquals(0.0f, iconProximityWeight(indicatorSlot = 2.0f, iconIndex = 4), 0.001f)
+    }
+
+    @Test
+    fun `nearestSlotIndex magnetically selects nearest destination on release`() {
+        assertEquals(0, nearestSlotIndex(0.39f, tabCount = 5))
+        assertEquals(1, nearestSlotIndex(0.51f, tabCount = 5))
+        assertEquals(4, nearestSlotIndex(3.8f, tabCount = 5))
+        assertEquals(4, nearestSlotIndex(6.0f, tabCount = 5))
+    }
 }

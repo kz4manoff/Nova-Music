@@ -7,7 +7,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -21,7 +20,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -37,6 +35,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -58,6 +58,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -74,6 +75,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -86,6 +88,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -108,7 +111,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -120,9 +125,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import com.novamusic.player.data.model.AudioOutputDevice
 import com.novamusic.player.data.model.NavBarAppearance
 import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.PlayerUiState
@@ -748,8 +753,9 @@ fun LiquidGlassTopBar(
 }
 
 /**
- * Floating iOS 26 Liquid Glass 5-Tab Pill Bar with fluid GPU-driven spring capsule,
- * elastic travel morphing, soft radial glow, tactile press-down, and overshoot/settle icons.
+ * Permanent minimal iOS 26 Liquid Glass Floating Pill Navigation Bar with an interactive
+ * circular Liquid Glass indicator that physically tracks the user's finger, stretches with motion,
+ * excites nearby icons, and magnetically snaps to the nearest destination on release.
  */
 @Composable
 fun LiquidGlassTabBar(
@@ -764,26 +770,10 @@ fun LiquidGlassTabBar(
     val isLight = novaColors.isLight
     val reducedMotion = LocalReducedMotion.current
     val animStyle = LocalPlayerAnimationStyle.current
-    val navAppearance = LocalNavBarAppearance.current
     val performHaptic = rememberNovaHaptic()
     val density = LocalDensity.current
-
-    val showLabels = navAppearance != NavBarAppearance.MINIMAL_PILL
-    val horizontalPad = when (navAppearance) {
-        NavBarAppearance.FLOATING_GLASS -> 14.dp
-        NavBarAppearance.COMPACT -> 18.dp
-        NavBarAppearance.MINIMAL_PILL -> 34.dp
-    }
-    val barHeight = when (navAppearance) {
-        NavBarAppearance.FLOATING_GLASS -> 66.dp
-        NavBarAppearance.COMPACT -> 56.dp
-        NavBarAppearance.MINIMAL_PILL -> 52.dp
-    }
-    val cornerRadius = when (navAppearance) {
-        NavBarAppearance.FLOATING_GLASS -> 32.dp
-        NavBarAppearance.COMPACT -> 28.dp
-        NavBarAppearance.MINIMAL_PILL -> 26.dp
-    }
+    val latestTabs by rememberUpdatedState(tabs)
+    val latestOnSelectTab by rememberUpdatedState(onSelectTab)
 
     var lastValidIndex by remember { mutableIntStateOf(0) }
     val resolvedIndex = remember(currentRoute, tabs) {
@@ -801,264 +791,281 @@ fun LiquidGlassTabBar(
     }
     val selectedIndex = (resolvedIndex ?: lastValidIndex).coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
 
-    LiquidGlassSurface(
+    var dragSlot by remember { mutableStateOf<Float?>(null) }
+    var dragVelocityX by remember { mutableFloatStateOf(0f) }
+
+    val indicatorSlot by animateFloatAsState(
+        targetValue = dragSlot ?: selectedIndex.toFloat(),
+        animationSpec = when {
+            dragSlot != null || reducedMotion -> snap()
+            animStyle == PlayerAnimationStyle.MINIMAL -> tween(170, easing = FastOutSlowInEasing)
+            else -> spring(dampingRatio = 0.68f, stiffness = 410f)
+        },
+        label = "lg_pill_indicator_slot"
+    )
+
+    val animatedVelocityX by animateFloatAsState(
+        targetValue = dragVelocityX,
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.72f, stiffness = 480f),
+        label = "lg_pill_vel_stretch"
+    )
+
+    // Always compact, minimal, icon-only floating pill across all screens
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = horizontalPad, end = horizontalPad, bottom = 10.dp),
-        shape = RoundedCornerShape(cornerRadius),
-        elevation = 22.dp,
-        glassOpacity = 1.05f
+            .padding(horizontal = 32.dp)
+            .padding(bottom = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        BoxWithConstraints(
+        LiquidGlassSurface(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(barHeight)
-                .padding(5.dp)
+                .widthIn(max = 316.dp)
+                .fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            elevation = 22.dp,
+            glassOpacity = 1.06f
         ) {
-            val count = tabs.size.coerceAtLeast(1)
-            val tabWidth = maxWidth / count
-            val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
-            val targetX = tabWidthPx * selectedIndex
-
-            val capsuleX by animateFloatAsState(
-                targetValue = targetX,
-                animationSpec = when {
-                    reducedMotion -> snap()
-                    animStyle == PlayerAnimationStyle.MINIMAL -> tween(170, easing = FastOutSlowInEasing)
-                    animStyle == PlayerAnimationStyle.BALANCED -> spring(dampingRatio = 0.84f, stiffness = 390f)
-                    else -> spring(dampingRatio = 0.74f, stiffness = 340f)
-                },
-                label = "lg_tab_slide_px"
-            )
-
-            val travelFraction = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
-                0f
-            } else {
-                (abs(targetX - capsuleX) / tabWidthPx).coerceIn(0f, 1.35f)
-            }
-            val capsuleScaleX = 1f + travelFraction * 0.13f
-            val capsuleScaleY = 1f - travelFraction * 0.045f
-
-            // Sliding Optical Glass Capsule Indicator (pure GPU graphicsLayer transform — zero layout shifts)
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
-                    .width(tabWidth)
-                    .fillMaxHeight()
-                    .graphicsLayer {
-                        translationX = capsuleX
-                        scaleX = capsuleScaleX
-                        scaleY = capsuleScaleY
-                    }
-                    .shadow(
-                        elevation = 10.dp,
-                        shape = RoundedCornerShape(26.dp),
-                        ambientColor = palette.glow.copy(alpha = if (isLight) 0.30f else 0.48f),
-                        spotColor = accent.copy(alpha = if (isLight) 0.32f else 0.55f)
-                    )
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            colors = if (isLight) {
-                                listOf(
-                                    Color.White.copy(alpha = 0.96f),
-                                    lerp(Color.White, palette.primary, 0.14f).copy(alpha = 0.86f)
-                                )
-                            } else {
-                                listOf(
-                                    lerp(Color.White, palette.glow, 0.28f).copy(alpha = 0.24f),
-                                    palette.primary.copy(alpha = 0.12f)
-                                )
-                            }
-                        )
-                    )
-                    .drawWithContent {
-                        drawContent()
-                        // Subtle moving optical catchlight sheen across the sliding lens
-                        val sheenPos = ((capsuleX / (tabWidthPx * count.coerceAtLeast(1))) * 0.5f)
-                        drawRect(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = if (isLight) 0.45f else 0.18f),
-                                    Color.White.copy(alpha = if (isLight) 0.12f else 0.04f),
-                                    Color.Transparent
-                                ),
-                                start = Offset(size.width * sheenPos, 0f),
-                                end = Offset(size.width * (0.75f + sheenPos * 0.3f), size.height)
-                            )
-                        )
-                    }
-                    .border(
-                        width = 0.85.dp,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = if (isLight) 0.96f else 0.52f),
-                                Color.White.copy(alpha = 0.10f)
-                            )
-                        ),
-                        shape = RoundedCornerShape(26.dp)
-                    )
-            )
-
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .padding(horizontal = 6.dp, vertical = 5.dp)
             ) {
-                tabs.forEachIndexed { index, tab ->
-                    val selected = index == selectedIndex
-                    val interactionSource = remember { MutableInteractionSource() }
-                    val isPressed by interactionSource.collectIsPressedAsState()
+                val count = tabs.size.coerceAtLeast(1)
+                val tabWidth = maxWidth / count
+                val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
+                val innerPadPx = with(density) { 6.dp.toPx() }
+                val circleDiameter = minOf(tabWidth - 4.dp, 44.dp)
+                val circleDiameterPx = with(density) { circleDiameter.toPx() }
 
-                    val pressScale by animateFloatAsState(
-                        targetValue = if (isPressed) 0.89f else 1f,
-                        animationSpec = if (reducedMotion) {
-                            snap()
-                        } else {
-                            spring(
-                                dampingRatio = 0.62f,
-                                stiffness = 540f
-                            )
-                        },
-                        label = "lg_tab_press_${tab.route}"
-                    )
+                val isDragging = dragSlot != null
+                val travelDelta = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
+                    0f
+                } else {
+                    val settleDist = if (isDragging) 0f else abs(selectedIndex.toFloat() - indicatorSlot)
+                    val velStretch = (abs(animatedVelocityX) / 1450f).coerceIn(0f, 1f)
+                    (settleDist * 0.65f + velStretch * 0.85f).coerceIn(0f, 1.25f)
+                }
+                val lensScaleX = 1f + travelDelta * 0.22f
+                val lensScaleY = 1f - travelDelta * 0.08f
+                val lensCenterX = indicatorSlot * tabWidthPx + (tabWidthPx - circleDiameterPx) / 2f
 
-                    val tabTransition = updateTransition(
-                        targetState = selected,
-                        label = "lg_tab_state_${tab.route}"
-                    )
-
-                    val iconScale by tabTransition.animateFloat(
-                        transitionSpec = {
-                            if (reducedMotion) snap()
-                            else if (targetState) {
-                                spring(
-                                    dampingRatio = if (animStyle == PlayerAnimationStyle.FLUID) 0.50f else 0.72f,
-                                    stiffness = 380f
-                                )
-                            } else {
-                                tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                            }
-                        },
-                        label = "lg_tab_icon_scale"
-                    ) { isSel -> if (isSel) 1.13f else 1f }
-
-                    val iconLiftPx by tabTransition.animateFloat(
-                        transitionSpec = {
-                            if (reducedMotion) snap()
-                            else spring(dampingRatio = 0.68f, stiffness = 360f)
-                        },
-                        label = "lg_tab_icon_lift"
-                    ) { isSel ->
-                        if (isSel && showLabels) with(density) { -1.6.dp.toPx() } else 0f
-                    }
-
-                    val glowAlpha by tabTransition.animateFloat(
-                        transitionSpec = {
-                            if (reducedMotion) snap()
-                            else tween(durationMillis = 260, easing = FastOutSlowInEasing)
-                        },
-                        label = "lg_tab_glow_alpha"
-                    ) { isSel -> if (isSel) 1f else 0f }
-
-                    val labelAlpha by tabTransition.animateFloat(
-                        transitionSpec = {
-                            if (reducedMotion) snap()
-                            else tween(durationMillis = 220, easing = FastOutSlowInEasing)
-                        },
-                        label = "lg_tab_label_alpha"
-                    ) { isSel -> if (isSel) 1f else 0.72f }
-
-                    val labelOffsetPx by tabTransition.animateFloat(
-                        transitionSpec = {
-                            if (reducedMotion) snap()
-                            else spring(dampingRatio = 0.76f, stiffness = 380f)
-                        },
-                        label = "lg_tab_label_offset"
-                    ) { isSel ->
-                        if (isSel) 0f else with(density) { 1.2.dp.toPx() }
-                    }
-
-                    val contentTint by tabTransition.animateColor(
-                        transitionSpec = {
-                            if (reducedMotion) snap()
-                            else tween(durationMillis = 230, easing = FastOutSlowInEasing)
-                        },
-                        label = "lg_tab_tint"
-                    ) { isSel ->
-                        if (isSel) accent else MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .graphicsLayer {
-                                scaleX = pressScale
-                                scaleY = pressScale
-                            }
-                            .drawBehind {
-                                if (glowAlpha > 0.01f) {
-                                    val radius = size.minDimension * 0.62f
-                                    drawCircle(
-                                        brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                accent.copy(alpha = (if (isLight) 0.18f else 0.30f) * glowAlpha),
-                                                palette.glow.copy(alpha = (if (isLight) 0.08f else 0.14f) * glowAlpha),
-                                                Color.Transparent
-                                            ),
-                                            center = Offset(size.width / 2f, size.height * if (showLabels) 0.42f else 0.50f),
-                                            radius = radius
-                                        ),
-                                        radius = radius,
-                                        center = Offset(size.width / 2f, size.height * if (showLabels) 0.42f else 0.50f)
+                // Real-time finger-tracking circular Liquid Glass indicator
+                Box(
+                    modifier = Modifier
+                        .size(circleDiameter)
+                        .graphicsLayer {
+                            translationX = lensCenterX
+                            scaleX = lensScaleX
+                            scaleY = lensScaleY
+                        }
+                        .shadow(
+                            elevation = if (isDragging) 14.dp else 10.dp,
+                            shape = CircleShape,
+                            ambientColor = palette.glow.copy(alpha = if (isLight) 0.34f else 0.56f),
+                            spotColor = accent.copy(alpha = if (isLight) 0.36f else 0.62f)
+                        )
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                colors = if (isLight) {
+                                    listOf(
+                                        Color.White.copy(alpha = 0.98f),
+                                        lerp(Color.White, palette.primary, 0.16f).copy(alpha = 0.88f)
+                                    )
+                                } else {
+                                    listOf(
+                                        lerp(Color.White, palette.glow, 0.34f).copy(alpha = 0.30f),
+                                        palette.primary.copy(alpha = 0.16f),
+                                        Color.White.copy(alpha = 0.08f)
                                     )
                                 }
-                            }
-                            .clip(RoundedCornerShape(26.dp))
-                            .clickable(
-                                interactionSource = interactionSource,
-                                indication = null,
-                                onClick = {
-                                    performHaptic()
-                                    onSelectTab(tab)
-                                }
+                            )
+                        )
+                        .drawWithContent {
+                            drawContent()
+                            val sheenFrac = (indicatorSlot / (count - 1).coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+                            drawCircle(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = if (isLight) 0.55f else 0.26f),
+                                        Color.White.copy(alpha = 0.05f),
+                                        Color.Transparent
+                                    ),
+                                    start = Offset(size.width * (0.15f + sheenFrac * 0.35f), 0f),
+                                    end = Offset(size.width * 0.9f, size.height)
+                                )
+                            )
+                        }
+                        .border(
+                            width = 0.9.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = if (isLight) 0.98f else 0.62f),
+                                    Color.White.copy(alpha = 0.12f)
+                                )
                             ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                            shape = CircleShape
+                        )
+                )
+
+                // Gesture overlay handling both tap and continuous horizontal finger-following swipe
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(count, tabWidthPx) {
+                            val touchSlop = viewConfiguration.touchSlop
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
+                                val velocityTracker = VelocityTracker()
+                                velocityTracker.addPosition(down.uptimeMillis, down.position)
+                                var isHorizontalTracking = false
+                                var lastHoveredIdx = nearestSlotIndex(
+                                    clampFingerSlot(down.position.x, size.width.toFloat(), innerPadPx, count),
+                                    count
+                                )
+                                var pointerId = down.id
+
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Main)
+                                    val change = event.changes.firstOrNull { it.id == pointerId }
+                                        ?: event.changes.firstOrNull { it.pressed }
+                                        ?: break
+                                    pointerId = change.id
+
+                                    if (change.isConsumed && !isHorizontalTracking) {
+                                        dragSlot = null
+                                        dragVelocityX = 0f
+                                        return@awaitEachGesture
+                                    }
+
+                                    if (!change.pressed) {
+                                        val finalTabs = latestTabs
+                                        if (isHorizontalTracking) {
+                                            val activeSlot = dragSlot ?: clampFingerSlot(
+                                                change.position.x,
+                                                size.width.toFloat(),
+                                                innerPadPx,
+                                                finalTabs.size
+                                            )
+                                            val snappedIdx = nearestSlotIndex(activeSlot, finalTabs.size)
+                                            dragSlot = null
+                                            dragVelocityX = 0f
+                                            if (finalTabs.isNotEmpty()) {
+                                                performHaptic()
+                                                latestOnSelectTab(finalTabs[snappedIdx])
+                                            }
+                                        } else {
+                                            val tappedSlot = clampFingerSlot(
+                                                down.position.x,
+                                                size.width.toFloat(),
+                                                innerPadPx,
+                                                finalTabs.size
+                                            )
+                                            val tappedIdx = nearestSlotIndex(tappedSlot, finalTabs.size)
+                                            dragSlot = null
+                                            dragVelocityX = 0f
+                                            if (finalTabs.isNotEmpty()) {
+                                                performHaptic()
+                                                latestOnSelectTab(finalTabs[tappedIdx])
+                                            }
+                                        }
+                                        return@awaitEachGesture
+                                    }
+
+                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                    val totalDx = change.position.x - down.position.x
+                                    val totalDy = change.position.y - down.position.y
+
+                                    if (!isHorizontalTracking) {
+                                        if (abs(totalDy) > touchSlop && abs(totalDy) > abs(totalDx) * 1.25f) {
+                                            // Yield cleanly to vertical scrolls / Mini Player swipes
+                                            dragSlot = null
+                                            dragVelocityX = 0f
+                                            return@awaitEachGesture
+                                        }
+                                        if (abs(totalDx) > touchSlop * 0.55f && abs(totalDx) > abs(totalDy) * 1.1f) {
+                                            isHorizontalTracking = true
+                                            change.consume()
+                                        }
+                                    }
+
+                                    if (isHorizontalTracking) {
+                                        change.consume()
+                                        val rawSlot = clampFingerSlot(
+                                            pointerX = change.position.x,
+                                            containerWidthPx = size.width.toFloat(),
+                                            horizontalPaddingPx = innerPadPx,
+                                            tabCount = count
+                                        )
+                                        dragSlot = applyMagneticSlotPull(rawSlot)
+                                        val instVelX = velocityTracker.calculateVelocity().x
+                                        dragVelocityX = dragVelocityX * 0.55f + instVelX * 0.45f
+
+                                        val hoveredNow = nearestSlotIndex(rawSlot, count)
+                                        if (hoveredNow != lastHoveredIdx) {
+                                            lastHoveredIdx = hoveredNow
+                                            performHaptic()
+                                        }
+                                    }
+                                }
+
+                                // Gesture interrupted / cancelled cleanly
+                                dragSlot = null
+                                dragVelocityX = 0f
+                            }
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    tabs.forEachIndexed { index, tab ->
+                        val proximity = iconProximityWeight(indicatorSlot, index)
+                        val iconScale = if (reducedMotion) {
+                            if (index == selectedIndex) 1.12f else 1f
+                        } else {
+                            1f + proximity * 0.22f
+                        }
+                        val iconTint = lerp(
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                            accent,
+                            proximity
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .drawBehind {
+                                    if (proximity > 0.04f) {
+                                        val glowR = size.minDimension * 0.58f
+                                        drawCircle(
+                                            brush = Brush.radialGradient(
+                                                colors = listOf(
+                                                    accent.copy(alpha = (if (isLight) 0.16f else 0.30f) * proximity),
+                                                    palette.glow.copy(alpha = (if (isLight) 0.06f else 0.12f) * proximity),
+                                                    Color.Transparent
+                                                ),
+                                                center = Offset(size.width / 2f, size.height / 2f),
+                                                radius = glowR
+                                            ),
+                                            radius = glowR,
+                                            center = Offset(size.width / 2f, size.height / 2f)
+                                        )
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = tab.icon,
                                 contentDescription = tab.label,
-                                tint = contentTint,
+                                tint = iconTint,
                                 modifier = Modifier
-                                    .size(if (showLabels) 21.dp else 23.dp)
+                                    .size(23.dp)
                                     .graphicsLayer {
                                         scaleX = iconScale
                                         scaleY = iconScale
-                                        translationY = iconLiftPx
                                     }
                             )
-                            if (showLabels) {
-                                Spacer(modifier = Modifier.height(2.5.dp))
-                                Text(
-                                    text = tab.label,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = if (navAppearance == NavBarAppearance.COMPACT) 9.5.sp else 10.sp,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = contentTint,
-                                    maxLines = 1,
-                                    modifier = Modifier.graphicsLayer {
-                                        alpha = labelAlpha
-                                        translationY = labelOffsetPx
-                                        val lblScale = if (selected) 1.02f else 0.96f
-                                        scaleX = lblScale
-                                        scaleY = lblScale
-                                    }
-                                )
-                            }
                         }
                     }
                 }
@@ -1170,7 +1177,9 @@ fun LiquidGlassMiniPlayer(
     onNext: () -> Unit,
     onOpenNowPlaying: () -> Unit,
     modifier: Modifier = Modifier,
-    onDismissMiniPlayer: (() -> Unit)? = null
+    onDismissMiniPlayer: (() -> Unit)? = null,
+    activeOutputDevice: AudioOutputDevice? = null,
+    onOpenAudioOutput: (() -> Unit)? = null
 ) {
     val song = playerState.currentSong
     val reducedMotion = LocalReducedMotion.current
@@ -1472,6 +1481,20 @@ fun LiquidGlassMiniPlayer(
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
+                        }
+
+                        if (onOpenAudioOutput != null) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            val outputIcon = activeOutputDevice?.let { audioOutputIcon(it.type) } ?: Icons.Rounded.VolumeUp
+                            LiquidGlassIconButton(
+                                icon = outputIcon,
+                                contentDescription = "Audio Output",
+                                active = activeOutputDevice?.type?.isExternal == true,
+                                showDotWhenActive = activeOutputDevice?.type?.isExternal == true,
+                                size = 34.dp,
+                                iconSize = 18.dp,
+                                onClick = onOpenAudioOutput
+                            )
                         }
 
                         Spacer(modifier = Modifier.width(6.dp))

@@ -27,7 +27,8 @@ class NovaViewModelFactory(
                     container.musicRepository,
                     container.audioPlayerManager,
                     container.preferencesRepository,
-                    container.equalizerManager
+                    container.equalizerManager,
+                    container.audioOutputManager
                 ) as T
             }
             modelClass.isAssignableFrom(EqualizerViewModel::class.java) -> {
@@ -42,7 +43,8 @@ class NovaViewModelFactory(
                     preferences = container.preferencesRepository,
                     repository = container.musicRepository,
                     playerManager = container.audioPlayerManager,
-                    equalizerManager = container.equalizerManager
+                    equalizerManager = container.equalizerManager,
+                    audioOutputManager = container.audioOutputManager
                 ) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

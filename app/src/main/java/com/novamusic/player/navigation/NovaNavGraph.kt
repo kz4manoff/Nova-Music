@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +64,8 @@ import com.novamusic.player.AppContainer
 import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.ui.NovaViewModelFactory
+import com.novamusic.player.ui.components.AudioDeviceEventPopup
+import com.novamusic.player.ui.components.AudioOutputSwitcherSheet
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassMiniPlayer
 import com.novamusic.player.ui.components.LiquidGlassNavTab
@@ -110,10 +113,13 @@ fun NovaMainAppShell(
     val settingsViewModel: SettingsViewModel = viewModel(factory = factory)
 
     val playerState by playerViewModel.playerState.collectAsStateWithLifecycle()
+    val audioRoutingState by playerViewModel.audioRoutingState.collectAsStateWithLifecycle()
     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val eqState by equalizerViewModel.eqState.collectAsStateWithLifecycle()
     val appSettings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showNowPlaying by remember { mutableStateOf(openNowPlayingTrigger > 0) }
+    var showAudioOutputSheet by remember { mutableStateOf(false) }
     var lyricsTargetSong by remember { mutableStateOf<Song?>(null) }
     var nowPlayingCollapseProgress by remember { mutableFloatStateOf(0f) }
     var miniPlayerDismissed by rememberSaveable { mutableStateOf(false) }
@@ -270,7 +276,9 @@ fun NovaMainAppShell(
                             onDismissMiniPlayer = {
                                 miniPlayerDismissed = true
                                 playerViewModel.pausePlayback()
-                            }
+                            },
+                            activeOutputDevice = audioRoutingState.activeDevice,
+                            onOpenAudioOutput = { showAudioOutputSheet = true }
                         )
 
                         LiquidGlassTabBar(
@@ -410,7 +418,8 @@ fun NovaMainAppShell(
                         SettingsScreen(
                             viewModel = settingsViewModel,
                             onBack = null,
-                            bottomContentPadding = miniPlayerHeight
+                            bottomContentPadding = miniPlayerHeight,
+                            onOpenAudioOutput = { showAudioOutputSheet = true }
                         )
                     }
 
@@ -639,6 +648,25 @@ fun NovaMainAppShell(
                         )
                     }
                 }
+            }
+
+            // Real-time floating Liquid Glass audio device connection / disconnection popup
+            AudioDeviceEventPopup(
+                banner = audioRoutingState.activeBanner,
+                onDismiss = playerViewModel::dismissDeviceBanner,
+                onOpenSwitcher = { showAudioOutputSheet = true }
+            )
+
+            if (showAudioOutputSheet) {
+                AudioOutputSwitcherSheet(
+                    routingState = audioRoutingState,
+                    isPlaying = playerState.isPlaying,
+                    onSelectDevice = playerViewModel::selectAudioOutput,
+                    onRefreshPermissions = playerViewModel::refreshAudioDevices,
+                    onOpenSystemOutput = { playerViewModel.openSystemSoundOutputPanel(context) },
+                    onOpenBluetoothSettings = { playerViewModel.openBluetoothSettings(context) },
+                    onDismiss = { showAudioOutputSheet = false }
+                )
             }
         }
     }

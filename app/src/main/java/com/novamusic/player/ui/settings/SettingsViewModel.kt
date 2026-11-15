@@ -7,12 +7,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
+import com.novamusic.player.audio.AudioOutputManager
 import com.novamusic.player.audio.AudioPlayerManager
 import com.novamusic.player.audio.EqualizerManager
 import com.novamusic.player.data.model.AccentColorOption
 import com.novamusic.player.data.model.ArtworkStyle
 import com.novamusic.player.data.model.AudioFocusBehavior
 import com.novamusic.player.data.model.AudioQualityMode
+import com.novamusic.player.data.model.AudioRoutingUiState
 import com.novamusic.player.data.model.EqualizerState
 import com.novamusic.player.data.model.MusicFolder
 import com.novamusic.player.data.model.NavBarAppearance
@@ -41,7 +43,8 @@ class SettingsViewModel(
     private val preferences: PreferencesRepository,
     private val repository: MusicRepository,
     private val playerManager: AudioPlayerManager,
-    private val equalizerManager: EqualizerManager
+    private val equalizerManager: EqualizerManager,
+    private val audioOutputManager: AudioOutputManager
 ) : ViewModel() {
 
     val appSettings: StateFlow<AppSettings> = preferences.appSettings
@@ -54,6 +57,7 @@ class SettingsViewModel(
 
     val isScanning: StateFlow<Boolean> = repository.isScanning
     val playerState: StateFlow<PlayerUiState> = playerManager.playerState
+    val audioRoutingState: StateFlow<AudioRoutingUiState> = audioOutputManager.routingState
 
     val availableFolders: StateFlow<List<MusicFolder>> = repository.availableFolders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

@@ -1,16 +1,22 @@
 package com.novamusic.player.ui.player
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.novamusic.player.audio.AudioOutputManager
 import com.novamusic.player.audio.AudioPlayerManager
 import com.novamusic.player.audio.EqualizerManager
 import com.novamusic.player.audio.LyricsParser
 import com.novamusic.player.data.model.ArtworkStyle
 import com.novamusic.player.data.model.AudioFileInfo
+import com.novamusic.player.data.model.AudioRoutingUiState
 import com.novamusic.player.data.model.LyricsResult
 import com.novamusic.player.data.model.LyricsSource
+import com.novamusic.player.data.model.OutputSwitchOutcome
 import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.data.model.PlaylistWithSongs
 import com.novamusic.player.data.model.Song
@@ -31,10 +37,12 @@ class PlayerViewModel(
     private val repository: MusicRepository,
     private val playerManager: AudioPlayerManager,
     private val preferences: PreferencesRepository,
-    equalizerManager: EqualizerManager
+    equalizerManager: EqualizerManager,
+    private val audioOutputManager: AudioOutputManager
 ) : ViewModel() {
 
     val playerState: StateFlow<PlayerUiState> = playerManager.playerState
+    val audioRoutingState: StateFlow<AudioRoutingUiState> = audioOutputManager.routingState
 
     val isEqualizerEnabled: StateFlow<Boolean> = equalizerManager.state
         .map { it.isEnabled }
@@ -101,6 +109,41 @@ class PlayerViewModel(
     fun jumpToQueueIndex(index: Int) = playerManager.jumpToQueueIndex(index)
     fun removeFromQueue(index: Int) = playerManager.removeFromQueue(index)
     fun moveQueueItem(from: Int, to: Int) = playerManager.moveQueueItem(from, to)
+
+    // Smart Audio Device Management & Output Switching
+    fun selectAudioOutput(deviceId: String?): OutputSwitchOutcome = audioOutputManager.selectOutputDevice(deviceId)
+    fun resetAudioOutputToAuto() {
+        audioOutputManager.selectOutputDevice(null)
+    }
+    fun dismissDeviceBanner() = audioOutputManager.dismissBanner()
+    fun clearAudioStatusNotice() = audioOutputManager.clearStatusNotice()
+    fun refreshAudioDevices() = audioOutputManager.refreshPermissionsAndDevices()
+
+    fun openSystemSoundOutputPanel(context: Context) {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Intent(Settings.Panel.ACTION_VOLUME)
+        } else {
+            Intent(Settings.ACTION_SOUND_SETTINGS)
+        }.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(intent) }
+            .onFailure {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_SOUND_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+    }
+
+    fun openBluetoothSettings(context: Context) {
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
 
     fun toggleFavorite(songId: Long) {
         viewModelScope.launch { repository.toggleFavorite(songId) }

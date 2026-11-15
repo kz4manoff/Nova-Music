@@ -77,6 +77,13 @@ class MusicService : MediaSessionService() {
             container.equalizerManager.attachToSession(exoPlayer.audioSessionId)
         }
 
+        container.audioOutputManager.start()
+        serviceScope.launch {
+            container.audioOutputManager.preferredAudioDeviceInfo.collectLatest { preferredDevice ->
+                exoPlayer.setPreferredAudioDevice(preferredDevice)
+            }
+        }
+
         serviceScope.launch {
             container.preferencesRepository.appSettings.collectLatest { settings ->
                 currentSettings = settings

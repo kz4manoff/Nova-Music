@@ -110,6 +110,7 @@ import com.novamusic.player.ui.components.LiquidGlassSurface
 import com.novamusic.player.ui.components.LiquidGlassTopBar
 import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.SleepTimerDialog
+import com.novamusic.player.ui.components.audioOutputIcon
 import com.novamusic.player.ui.components.rememberNovaHaptic
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
@@ -129,13 +130,15 @@ private data class SettingsSearchItem(
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: (() -> Unit)? = null,
-    bottomContentPadding: Dp
+    bottomContentPadding: Dp,
+    onOpenAudioOutput: (() -> Unit)? = null
 ) {
     val settings by viewModel.appSettings.collectAsStateWithLifecycle()
     val eqState by viewModel.eqState.collectAsStateWithLifecycle()
     val customPresets by viewModel.customPresets.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
+    val audioRoutingState by viewModel.audioRoutingState.collectAsStateWithLifecycle()
     val availableFolders by viewModel.availableFolders.collectAsStateWithLifecycle()
     val totalSongsCount by viewModel.totalSongsCount.collectAsStateWithLifecycle()
     val totalLibraryBytes by viewModel.totalLibraryBytes.collectAsStateWithLifecycle()
@@ -219,6 +222,7 @@ fun SettingsScreen(
         eqState,
         isScanning,
         playerState.sleepTimer,
+        audioRoutingState,
         totalSongsCount,
         totalLibraryBytes,
         cacheSizeBytes,
@@ -227,6 +231,18 @@ fun SettingsScreen(
         currentLanguageLabel
     ) {
         buildList {
+            if (onOpenAudioOutput != null) {
+                add(SettingsSearchItem("audio_output", "Playback", "Audio Output", "bluetooth headphones speaker usb wired route device") {
+                    val active = audioRoutingState.activeDevice
+                    NovaActionSettingRow(
+                        icon = active?.let { audioOutputIcon(it.type) } ?: Icons.Rounded.VolumeUp,
+                        title = "Audio Output & Devices",
+                        subtitle = "${audioRoutingState.devices.size} output(s) detected • ${active?.type?.label ?: "Phone Speaker"}",
+                        trailingText = active?.name ?: "Speaker",
+                        onClick = onOpenAudioOutput
+                    )
+                })
+            }
             // GENERAL
             add(SettingsSearchItem("lang", "General", "Language", "locale english french spanish arabic") {
                 NovaActionSettingRow(
@@ -844,6 +860,17 @@ fun SettingsScreen(
                 ) {
                     NovaSectionHeader(title = "Playback", icon = Icons.Rounded.PlayArrow)
                     NovaSettingsCard {
+                        if (onOpenAudioOutput != null) {
+                            val activeOutput = audioRoutingState.activeDevice
+                            NovaActionSettingRow(
+                                icon = activeOutput?.let { audioOutputIcon(it.type) } ?: Icons.Rounded.VolumeUp,
+                                title = "Audio Output & Devices",
+                                subtitle = "${audioRoutingState.devices.size} connected • ${activeOutput?.type?.label ?: "System Auto"}",
+                                trailingText = activeOutput?.name ?: "Speaker",
+                                onClick = onOpenAudioOutput
+                            )
+                            NovaSettingsDivider()
+                        }
                         NovaDropdownSettingRow(
                             icon = Icons.Rounded.HighQuality,
                             title = "Audio Quality",

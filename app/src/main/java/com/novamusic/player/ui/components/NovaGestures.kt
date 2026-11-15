@@ -120,6 +120,49 @@ internal fun resolveHorizontalTrackAction(
 }
 
 /**
+ * Pure interactive pill navigation finger-tracking math helpers.
+ */
+internal fun clampFingerSlot(
+    pointerX: Float,
+    containerWidthPx: Float,
+    horizontalPaddingPx: Float,
+    tabCount: Int
+): Float {
+    if (tabCount <= 1) return 0f
+    val usableWidth = (containerWidthPx - horizontalPaddingPx * 2f).coerceAtLeast(1f)
+    val slotWidth = usableWidth / tabCount.toFloat()
+    val rawSlot = ((pointerX - horizontalPaddingPx) / slotWidth) - 0.5f
+    return rawSlot.coerceIn(0f, (tabCount - 1).toFloat())
+}
+
+internal fun applyMagneticSlotPull(
+    rawSlot: Float,
+    magnetStrength: Float = 0.22f
+): Float {
+    val nearest = kotlin.math.round(rawSlot)
+    val delta = rawSlot - nearest // [-0.5, 0.5]
+    val pullFactor = (1f - magnetStrength).coerceIn(0.4f, 1f)
+    // Gentle non-linear magnetic gravity near each icon center while preserving smooth continuous tracking
+    val shaped = delta * (pullFactor + (1f - pullFactor) * (abs(delta) * 2f))
+    return nearest + shaped
+}
+
+internal fun iconProximityWeight(
+    indicatorSlot: Float,
+    iconIndex: Int
+): Float {
+    return (1f - abs(indicatorSlot - iconIndex.toFloat())).coerceIn(0f, 1f)
+}
+
+internal fun nearestSlotIndex(
+    slot: Float,
+    tabCount: Int
+): Int {
+    if (tabCount <= 0) return 0
+    return kotlin.math.round(slot).toInt().coerceIn(0, tabCount - 1)
+}
+
+/**
  * Direction-locked iOS-style drag detector:
  * - Respects Android system navigation edge zones (edgeExclusionDp).
  * - Waits for child consumption on PointerEventPass.Main so buttons, seek bars, and scrollable
