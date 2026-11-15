@@ -147,7 +147,7 @@ fun AboutScreen(
                         .padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(32.dp),
                     highlighted = true,
-                    tint = palette.dominant.copy(alpha = 0.14f),
+                    tint = palette.primary.copy(alpha = 0.14f),
                     elevation = 20.dp,
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp)
                 ) {
@@ -193,8 +193,8 @@ fun AboutScreen(
                                     .background(
                                         Brush.linearGradient(
                                             colors = listOf(
-                                                novaColors.glassFillTop.copy(alpha = 0.92f),
-                                                novaColors.glassFillBottom.copy(alpha = 0.86f)
+                                                novaColors.glassHighlight.copy(alpha = 0.92f),
+                                                novaColors.glassSurface.copy(alpha = 0.86f)
                                             )
                                         )
                                     )

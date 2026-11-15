@@ -184,7 +184,7 @@ fun LibraryScreen(
                     DropdownMenu(
                         expanded = showSortMenu,
                         onDismissRequest = { showSortMenu = false },
-                        containerColor = novaColors.elevatedSurface
+                        modifier = Modifier.background(novaColors.elevatedSurface)
                     ) {
                         SortOrder.entries.forEach { order ->
                             val selected = state.sortOrder == order

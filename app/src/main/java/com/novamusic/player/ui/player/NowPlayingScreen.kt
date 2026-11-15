@@ -281,7 +281,7 @@ fun NowPlayingScreen(
                     DropdownMenu(
                         expanded = showOptionsMenu,
                         onDismissRequest = { showOptionsMenu = false },
-                        containerColor = novaColors.elevatedSurface
+                        modifier = Modifier.background(novaColors.elevatedSurface)
                     ) {
                         DropdownMenuItem(
                             leadingIcon = { Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = accent) },
