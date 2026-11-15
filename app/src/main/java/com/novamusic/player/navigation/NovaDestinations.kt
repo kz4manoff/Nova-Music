@@ -6,9 +6,11 @@ object NovaDestinations {
     const val HOME = "home"
     const val LIBRARY = "library"
     const val LIBRARY_SEARCH = "library?search=true"
+    const val SEARCH = "search"
     const val PLAYLISTS = "playlists"
     const val EQUALIZER = "equalizer"
     const val SETTINGS = "settings"
+    const val ABOUT = "about"
 
     const val ALBUM_DETAIL = "album/{albumId}"
     const val ARTIST_DETAIL = "artist?name={artistName}"

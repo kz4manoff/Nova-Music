@@ -3,9 +3,12 @@ package com.novamusic.player.ui.player
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,17 +51,17 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.data.model.LyricsSource
 import com.novamusic.player.data.model.Song
+import com.novamusic.player.ui.components.LiquidGlassArtwork
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassButton
-import com.novamusic.player.ui.components.LiquidGlassCard
 import com.novamusic.player.ui.components.LiquidGlassIconButton
-import com.novamusic.player.ui.components.NovaAlbumArtwork
+import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.LiquidGlassTopBar
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.utils.FormatUtils
@@ -103,61 +106,40 @@ fun LyricsScreen(
         LiquidGlassBackdrop(
             artworkUri = song.artworkUri,
             isPlaying = playerState.isPlaying,
-            intensity = 1.2f
+            intensity = 1.28f
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Floating Glass Header
-            LiquidGlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                shape = RoundedCornerShape(24.dp),
-                elevation = 12.dp,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    LiquidGlassIconButton(
-                        icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
-                        size = 38.dp,
-                        iconSize = 19.dp,
-                        onClick = onBack
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    NovaAlbumArtwork(
-                        artworkUri = song.artworkUri,
-                        contentDescription = song.album,
-                        modifier = Modifier.size(44.dp),
-                        cornerRadius = 11.dp
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = song.title,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+            val sourceLabel = when (lyricsResult.source) {
+                LyricsSource.LRC_FILE -> "Synced LRC"
+                LyricsSource.EMBEDDED -> "Embedded Tag"
+                LyricsSource.MANUAL -> if (lyricsResult.isSynchronized) "Imported LRC" else "Manual"
+                LyricsSource.NONE -> "No Lyrics"
+            }
+
+            LiquidGlassTopBar(
+                title = song.title,
+                subtitle = "${song.artist} • $sourceLabel",
+                leadingAction = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LiquidGlassIconButton(
+                            icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            size = 40.dp,
+                            iconSize = 20.dp,
+                            onClick = onBack
                         )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        val sourceLabel = when (lyricsResult.source) {
-                            LyricsSource.LRC_FILE -> "SYNCED LRC FILE"
-                            LyricsSource.EMBEDDED -> "EMBEDDED TAG"
-                            LyricsSource.MANUAL -> if (lyricsResult.isSynchronized) "IMPORTED LRC" else "MANUAL"
-                            LyricsSource.NONE -> "NO LYRICS"
-                        }
-                        Text(
-                            text = "${song.artist} • $sourceLabel",
-                            style = NovaMonoTelemetry.copy(fontSize = 10.sp),
-                            color = accent,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                        Spacer(modifier = Modifier.width(8.dp))
+                        LiquidGlassArtwork(
+                            artworkUri = song.artworkUri,
+                            contentDescription = song.album,
+                            modifier = Modifier.size(42.dp),
+                            shape = RoundedCornerShape(11.dp),
+                            shadowElevation = 10.dp
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                },
+                trailingActions = {
                     LiquidGlassIconButton(
                         icon = Icons.Rounded.FileOpen,
                         contentDescription = "Import .lrc",
@@ -165,7 +147,6 @@ fun LyricsScreen(
                         iconSize = 18.dp,
                         onClick = { lrcPickerLauncher.launch(arrayOf("*/*")) }
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
                     LiquidGlassIconButton(
                         icon = Icons.Rounded.Edit,
                         contentDescription = "Edit Lyrics",
@@ -174,7 +155,7 @@ fun LyricsScreen(
                         onClick = { showEditorDialog = true }
                     )
                 }
-            }
+            )
 
             if (lyricsResult.lines.isEmpty()) {
                 Box(
@@ -183,8 +164,8 @@ fun LyricsScreen(
                         .padding(28.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    LiquidGlassCard(
-                        shape = RoundedCornerShape(28.dp),
+                    LiquidGlassSurface(
+                        shape = RoundedCornerShape(30.dp),
                         contentPadding = PaddingValues(28.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -211,7 +192,7 @@ fun LyricsScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Place a matching .lrc file in the song's folder, embed lyrics in the audio tag, or import/paste lyrics manually.",
+                                text = "Place a matching .lrc file next to the song, embed lyrics in the audio tag, or paste lyrics manually.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -243,11 +224,12 @@ fun LyricsScreen(
                     }
                 }
             } else {
+                // Apple Music Style Synchronized Open Floating Lyrics
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     itemsIndexed(lyricsResult.lines) { index, line ->
                         val isActive = index == activeLineIndex
@@ -255,71 +237,57 @@ fun LyricsScreen(
                             targetValue = when {
                                 isActive -> MaterialTheme.colorScheme.onBackground
                                 lyricsResult.isSynchronized && activeLineIndex > index ->
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.44f)
-                                else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f)
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.36f)
+                                else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.56f)
                             },
-                            animationSpec = tween(220),
+                            animationSpec = tween(260),
                             label = "lyric_color"
                         )
                         val lineScale by animateFloatAsState(
-                            targetValue = if (isActive) 1.02f else 1f,
-                            animationSpec = tween(220),
+                            targetValue = if (isActive) 1.04f else 0.98f,
+                            animationSpec = spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium),
                             label = "lyric_scale"
                         )
 
-                        LiquidGlassCard(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .scale(lineScale),
-                            shape = RoundedCornerShape(18.dp),
-                            highlighted = isActive,
-                            elevation = if (isActive) 12.dp else 0.dp,
-                            onClick = if (line.timestampMs != null) {
-                                { line.timestampMs?.let { viewModel.seekTo(it) } }
-                            } else null,
-                            contentPadding = PaddingValues(vertical = 12.dp, horizontal = 14.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (isActive) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(3.5.dp)
-                                            .height(26.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(accent)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                }
-                                if (line.timestampMs != null) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(
-                                                if (isActive) accent.copy(alpha = 0.22f) else novaColors.recessedSurface
-                                            )
-                                            .padding(horizontal = 7.dp, vertical = 3.dp)
-                                    ) {
-                                        Text(
-                                            text = FormatUtils.formatDuration(line.timestampMs),
-                                            style = NovaMonoTelemetry.copy(fontSize = 10.sp),
-                                            color = if (isActive) accent else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                }
-                                Text(
-                                    text = line.text,
-                                    style = if (isActive) {
-                                        MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold)
+                                .scale(lineScale)
+                                .clip(RoundedCornerShape(16.dp))
+                                .then(
+                                    if (line.timestampMs != null) {
+                                        Modifier.clickable { line.timestampMs?.let { viewModel.seekTo(it) } }
                                     } else {
-                                        MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium)
-                                    },
-                                    color = textColor
+                                        Modifier
+                                    }
+                                )
+                                .padding(vertical = 4.dp)
+                        ) {
+                            if (line.timestampMs != null && isActive) {
+                                Text(
+                                    text = FormatUtils.formatDuration(line.timestampMs),
+                                    style = NovaMonoTelemetry.copy(fontSize = 10.sp),
+                                    color = accent,
+                                    modifier = Modifier.padding(bottom = 3.dp)
                                 )
                             }
+                            Text(
+                                text = line.text,
+                                style = if (isActive) {
+                                    MaterialTheme.typography.headlineMedium.copy(
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 27.sp,
+                                        lineHeight = 33.sp
+                                    )
+                                } else {
+                                    MaterialTheme.typography.headlineSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 23.sp,
+                                        lineHeight = 29.sp
+                                    )
+                                },
+                                color = textColor
+                            )
                         }
                     }
                 }

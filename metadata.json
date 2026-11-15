@@ -2,5 +2,7 @@
   "name": "NOVA MUSIC",
   "description": "Production-grade native Android offline music player built with Kotlin, Jetpack Compose, Media3 ExoPlayer, Room, DataStore, and Android AudioEffect APIs.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

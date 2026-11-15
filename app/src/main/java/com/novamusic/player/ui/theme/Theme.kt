@@ -28,6 +28,8 @@ data class NovaExtendedColors(
     val glassBorderTop: Color,
     val glassBorderBottom: Color,
     val glassShadow: Color,
+    val innerShadowTop: Color,
+    val innerShadowBottom: Color,
     val isAmoled: Boolean,
     val isLight: Boolean
 )
@@ -40,9 +42,11 @@ val LocalNovaColors = staticCompositionLocalOf {
         borderSubtle = NovaAmoledBorder,
         glassSurface = NovaAmoledSurface,
         glassHighlight = NovaGlassHighlightDark,
-        glassBorderTop = Color(0x58FFFFFF),
+        glassBorderTop = Color(0x48FFFFFF),
         glassBorderBottom = NovaGlassBorderBottomDark,
-        glassShadow = Color(0x88000000),
+        glassShadow = Color(0x94000000),
+        innerShadowTop = Color(0x28FFFFFF),
+        innerShadowBottom = Color(0x42000000),
         isAmoled = true,
         isLight = false
     )
@@ -50,9 +54,9 @@ val LocalNovaColors = staticCompositionLocalOf {
 
 private val NovaShapes = Shapes(
     small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(26.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    medium = RoundedCornerShape(22.dp),
+    large = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(34.dp)
 )
 
 @Composable
@@ -67,11 +71,11 @@ fun NovaMusicTheme(
     val colorScheme = when (themeMode) {
         ThemeMode.AMOLED -> darkColorScheme(
             primary = accent,
-            onPrimary = Color(0xFF08080A),
+            onPrimary = Color(0xFF070709),
             primaryContainer = accent.copy(alpha = 0.22f),
             onPrimaryContainer = accent,
             secondary = accent.copy(alpha = 0.85f),
-            onSecondary = Color(0xFF08080A),
+            onSecondary = Color(0xFF070709),
             background = NovaAmoledBackground,
             onBackground = NovaTextPrimaryDark,
             surface = NovaAmoledSurface,
@@ -83,11 +87,11 @@ fun NovaMusicTheme(
         )
         ThemeMode.DARK -> darkColorScheme(
             primary = accent,
-            onPrimary = Color(0xFF08080A),
+            onPrimary = Color(0xFF070709),
             primaryContainer = accent.copy(alpha = 0.22f),
             onPrimaryContainer = accent,
             secondary = accent.copy(alpha = 0.85f),
-            onSecondary = Color(0xFF08080A),
+            onSecondary = Color(0xFF070709),
             background = NovaDarkBackground,
             onBackground = NovaTextPrimaryDark,
             surface = NovaDarkSurface,
@@ -123,9 +127,11 @@ fun NovaMusicTheme(
             borderSubtle = NovaAmoledBorder,
             glassSurface = NovaAmoledSurface,
             glassHighlight = NovaGlassHighlightDark,
-            glassBorderTop = Color(0x58FFFFFF),
+            glassBorderTop = Color(0x4AFFFFFF),
             glassBorderBottom = NovaGlassBorderBottomDark,
-            glassShadow = Color(0x88000000),
+            glassShadow = Color(0x96000000),
+            innerShadowTop = Color(0x28FFFFFF),
+            innerShadowBottom = Color(0x45000000),
             isAmoled = true,
             isLight = false
         )
@@ -136,9 +142,11 @@ fun NovaMusicTheme(
             borderSubtle = NovaDarkBorder,
             glassSurface = NovaDarkSurface,
             glassHighlight = NovaGlassHighlightDark,
-            glassBorderTop = Color(0x60FFFFFF),
+            glassBorderTop = Color(0x52FFFFFF),
             glassBorderBottom = NovaGlassBorderBottomDark,
-            glassShadow = Color(0x70000000),
+            glassShadow = Color(0x78000000),
+            innerShadowTop = Color(0x2CFFFFFF),
+            innerShadowBottom = Color(0x36000000),
             isAmoled = false,
             isLight = false
         )
@@ -149,9 +157,11 @@ fun NovaMusicTheme(
             borderSubtle = NovaLightBorder,
             glassSurface = NovaLightSurface,
             glassHighlight = NovaGlassHighlightLight,
-            glassBorderTop = Color(0xFFFFFFFF),
+            glassBorderTop = Color(0xF5FFFFFF),
             glassBorderBottom = NovaGlassBorderBottomLight,
-            glassShadow = Color(0x200F172A),
+            glassShadow = Color(0x220F172A),
+            innerShadowTop = Color(0xD8FFFFFF),
+            innerShadowBottom = Color(0x160F172A),
             isAmoled = false,
             isLight = true
         )

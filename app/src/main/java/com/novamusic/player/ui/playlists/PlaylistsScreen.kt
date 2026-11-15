@@ -62,11 +62,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.data.model.PlaylistWithSongs
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.ui.components.AnimatedEqualizerBars
+import com.novamusic.player.ui.components.LiquidGlassArtwork
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassButton
-import com.novamusic.player.ui.components.LiquidGlassCard
 import com.novamusic.player.ui.components.LiquidGlassIconButton
-import com.novamusic.player.ui.components.NovaAlbumArtwork
+import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.LiquidGlassTopBar
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.ui.theme.NovaOrangeDeep
@@ -90,36 +91,15 @@ fun PlaylistsScreen(
     var renameTarget by remember { mutableStateOf<PlaylistWithSongs?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Floating Glass Header
-        LiquidGlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp),
-            shape = RoundedCornerShape(24.dp),
-            elevation = 12.dp,
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Playlists",
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    Text(
-                        text = "${playlists.size} collections • ${favorites.size} loved",
-                        style = NovaMonoTelemetry.copy(fontSize = 10.sp),
-                        color = accent
-                    )
-                }
+        LiquidGlassTopBar(
+            title = "Playlists",
+            subtitle = "${playlists.size} collections • ${favorites.size} loved",
+            trailingActions = {
                 LiquidGlassButton(
                     onClick = { showCreateDialog = true },
                     highlighted = true,
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -128,34 +108,33 @@ fun PlaylistsScreen(
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            "New Playlist",
+                            "New",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }
             }
-        }
+        )
 
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
                 top = 8.dp,
-                bottom = bottomContentPadding + 20.dp
+                bottom = bottomContentPadding + 24.dp
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Luminous Favorite Tracks Glass Card
             item {
                 val favDuration = favorites.sumOf { it.durationMs }
-                LiquidGlassCard(
+                LiquidGlassSurface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(26.dp),
                     highlighted = true,
-                    elevation = 14.dp,
+                    elevation = 16.dp,
                     contentPadding = PaddingValues(16.dp),
                     onClick = onOpenFavorites
                 ) {
@@ -163,14 +142,13 @@ fun PlaylistsScreen(
                         Box(
                             modifier = Modifier
                                 .size(64.dp)
-                                .shadow(12.dp, RoundedCornerShape(18.dp), ambientColor = accent, spotColor = accent)
+                                .shadow(14.dp, RoundedCornerShape(18.dp), ambientColor = accent, spotColor = accent)
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(
                                     Brush.linearGradient(
                                         colors = listOf(NovaOrangeGlow, accent, NovaOrangeDeep)
                                     )
-                                )
-                                .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(18.dp)),
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -182,22 +160,15 @@ fun PlaylistsScreen(
                         }
                         Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(7.dp))
-                                    .background(accent.copy(alpha = 0.16f))
-                                    .padding(horizontal = 7.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "SMART COLLECTION",
-                                    style = NovaMonoTelemetry.copy(fontSize = 9.sp),
-                                    color = accent
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(5.dp))
+                            Text(
+                                text = "SMART COLLECTION",
+                                style = NovaMonoTelemetry.copy(fontSize = 9.5.sp),
+                                color = accent
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = "Favorite Tracks",
-                                style = MaterialTheme.typography.titleLarge
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             )
                             Text(
                                 text = "${favorites.size} tracks • ${FormatUtils.formatDuration(favDuration)}",
@@ -206,23 +177,14 @@ fun PlaylistsScreen(
                             )
                         }
                         if (favorites.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .shadow(8.dp, CircleShape, ambientColor = accent, spotColor = accent)
-                                    .clip(CircleShape)
-                                    .background(accent)
-                                    .border(0.9.dp, Color.White.copy(alpha = 0.55f), CircleShape)
-                                    .clickable { viewModel.playPlaylist(favorites) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.PlayArrow,
-                                    contentDescription = "Play Favorites",
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
+                            LiquidGlassIconButton(
+                                icon = Icons.Rounded.PlayArrow,
+                                contentDescription = "Play Favorites",
+                                active = true,
+                                size = 42.dp,
+                                iconSize = 22.dp,
+                                onClick = { viewModel.playPlaylist(favorites) }
+                            )
                         }
                     }
                 }
@@ -230,8 +192,8 @@ fun PlaylistsScreen(
 
             if (playlists.isEmpty()) {
                 item {
-                    LiquidGlassCard(
-                        shape = RoundedCornerShape(24.dp),
+                    LiquidGlassSurface(
+                        shape = RoundedCornerShape(26.dp),
                         contentPadding = PaddingValues(28.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -268,9 +230,11 @@ fun PlaylistsScreen(
 
             items(playlists, key = { it.id }) { playlist ->
                 val totalDurationMs = playlist.songs.sumOf { it.durationMs }
-                LiquidGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
+                LiquidGlassSurface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem(),
+                    shape = RoundedCornerShape(24.dp),
                     elevation = 10.dp,
                     contentPadding = PaddingValues(12.dp),
                     onClick = { onOpenPlaylist(playlist.id) }
@@ -281,7 +245,7 @@ fun PlaylistsScreen(
                     ) {
                         PlaylistMosaicArtwork(
                             songs = playlist.songs,
-                            modifier = Modifier.size(68.dp)
+                            modifier = Modifier.size(66.dp)
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -386,110 +350,88 @@ fun PlaylistDetailScreen(
             LiquidGlassBackdrop(
                 artworkUri = coverUri,
                 isPlaying = playerState.isPlaying,
-                intensity = 1.0f
+                intensity = 1.08f
             )
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            LiquidGlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                shape = RoundedCornerShape(28.dp),
-                elevation = 16.dp,
-                contentPadding = PaddingValues(16.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        LiquidGlassIconButton(
-                            icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            size = 38.dp,
-                            iconSize = 19.dp,
-                            onClick = onBack
-                        )
-                        if (!isFavoritesMode && playlist != null) {
-                            LiquidGlassButton(
-                                onClick = { showAddSongsDialog = true },
-                                highlighted = true,
-                                shape = RoundedCornerShape(14.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Rounded.Add,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        "Add Tracks",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isFavoritesMode) {
-                            Box(
-                                modifier = Modifier
-                                    .size(84.dp)
-                                    .shadow(14.dp, RoundedCornerShape(20.dp), ambientColor = accent, spotColor = accent)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(Brush.linearGradient(listOf(NovaOrangeGlow, accent, NovaOrangeDeep)))
-                                    .border(1.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(20.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
+            LiquidGlassTopBar(
+                title = title,
+                subtitle = "${songs.size} tracks • ${FormatUtils.formatDuration(totalDurationMs)}",
+                leadingAction = {
+                    LiquidGlassIconButton(
+                        icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        size = 40.dp,
+                        iconSize = 20.dp,
+                        onClick = onBack
+                    )
+                },
+                trailingActions = {
+                    if (!isFavoritesMode && playlist != null) {
+                        LiquidGlassButton(
+                            onClick = { showAddSongsDialog = true },
+                            highlighted = true,
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Favorite,
+                                    Icons.Rounded.Add,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Add",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
-                        } else {
-                            PlaylistMosaicArtwork(
-                                songs = songs,
-                                modifier = Modifier
-                                    .size(84.dp)
-                                    .shadow(14.dp, RoundedCornerShape(18.dp))
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${songs.size} tracks • ${FormatUtils.formatDuration(totalDurationMs)}",
-                                style = NovaMonoTelemetry,
-                                color = accent
-                            )
                         }
                     }
+                }
+            )
 
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isFavoritesMode) {
+                    Box(
+                        modifier = Modifier
+                            .size(82.dp)
+                            .shadow(16.dp, RoundedCornerShape(22.dp), ambientColor = accent, spotColor = accent)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Brush.linearGradient(listOf(NovaOrangeGlow, accent, NovaOrangeDeep))),
+                        contentAlignment = Alignment.Center
                     ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Favorite,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                } else {
+                    PlaylistMosaicArtwork(
+                        songs = songs,
+                        modifier = Modifier
+                            .size(82.dp)
+                            .shadow(16.dp, RoundedCornerShape(20.dp))
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         LiquidGlassButton(
                             onClick = { viewModel.playPlaylist(songs, 0, false) },
                             enabled = songs.isNotEmpty(),
@@ -502,9 +444,9 @@ fun PlaylistDetailScreen(
                                     Icons.Rounded.PlayArrow,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
                                     "Play All",
                                     style = MaterialTheme.typography.labelLarge,
@@ -520,7 +462,7 @@ fun PlaylistDetailScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text("Shuffle", style = MaterialTheme.typography.labelLarge)
                             }
                         }
@@ -530,19 +472,19 @@ fun PlaylistDetailScreen(
 
             LazyColumn(
                 contentPadding = PaddingValues(
-                    start = 14.dp,
-                    end = 14.dp,
-                    top = 4.dp,
-                    bottom = bottomContentPadding + 20.dp
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 6.dp,
+                    bottom = bottomContentPadding + 24.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 itemsIndexed(songs, key = { _, s -> s.id }) { index, song ->
                     val isCurrent = playerState.currentSong?.id == song.id
-                    LiquidGlassCard(
-                        shape = RoundedCornerShape(18.dp),
+                    LiquidGlassSurface(
+                        shape = RoundedCornerShape(20.dp),
                         highlighted = isCurrent,
-                        elevation = if (isCurrent) 10.dp else 4.dp,
+                        elevation = if (isCurrent) 12.dp else 4.dp,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         onClick = { viewModel.playPlaylist(songs, index, false) }
                     ) {
@@ -557,21 +499,22 @@ fun PlaylistDetailScreen(
                                 modifier = Modifier.width(26.dp)
                             )
                             Box(contentAlignment = Alignment.Center) {
-                                NovaAlbumArtwork(
+                                LiquidGlassArtwork(
                                     artworkUri = song.artworkUri,
                                     contentDescription = song.album,
                                     modifier = Modifier.size(48.dp),
-                                    cornerRadius = 11.dp
+                                    shape = RoundedCornerShape(12.dp),
+                                    shadowElevation = 8.dp
                                 )
                                 if (isCurrent) {
                                     Box(
                                         modifier = Modifier
                                             .size(48.dp)
-                                            .clip(RoundedCornerShape(11.dp))
-                                            .background(Color.Black.copy(alpha = 0.56f)),
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color.Black.copy(alpha = 0.48f)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        AnimatedEqualizerBars(isPlaying = playerState.isPlaying, color = accent)
+                                        AnimatedEqualizerBars(isPlaying = playerState.isPlaying, color = Color.White)
                                     }
                                 }
                             }
@@ -748,21 +691,22 @@ private fun PlaylistMosaicArtwork(
     val distinctArts = songs.distinctBy { it.albumId }.take(4)
     val novaColors = LocalNovaColors.current
     if (distinctArts.size < 4) {
-        NovaAlbumArtwork(
+        LiquidGlassArtwork(
             artworkUri = songs.firstOrNull()?.artworkUri,
             contentDescription = null,
             modifier = modifier,
-            cornerRadius = 15.dp,
+            shape = RoundedCornerShape(16.dp),
+            shadowElevation = 10.dp,
             fallbackIcon = Icons.Rounded.QueueMusic
         )
     } else {
         Column(
             modifier = modifier
-                .clip(RoundedCornerShape(15.dp))
+                .clip(RoundedCornerShape(16.dp))
                 .border(
-                    width = 0.9.dp,
+                    width = 0.75.dp,
                     brush = Brush.linearGradient(listOf(novaColors.glassBorderTop, novaColors.glassBorderBottom)),
-                    shape = RoundedCornerShape(15.dp)
+                    shape = RoundedCornerShape(16.dp)
                 ),
             verticalArrangement = Arrangement.spacedBy(1.5.dp)
         ) {
@@ -770,42 +714,46 @@ private fun PlaylistMosaicArtwork(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(1.5.dp)
             ) {
-                NovaAlbumArtwork(
+                LiquidGlassArtwork(
                     artworkUri = distinctArts[0].artworkUri,
                     contentDescription = null,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize(),
-                    cornerRadius = 0.dp
+                    shape = RoundedCornerShape(0.dp),
+                    shadowElevation = 0.dp
                 )
-                NovaAlbumArtwork(
+                LiquidGlassArtwork(
                     artworkUri = distinctArts[1].artworkUri,
                     contentDescription = null,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize(),
-                    cornerRadius = 0.dp
+                    shape = RoundedCornerShape(0.dp),
+                    shadowElevation = 0.dp
                 )
             }
             Row(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(1.5.dp)
             ) {
-                NovaAlbumArtwork(
+                LiquidGlassArtwork(
                     artworkUri = distinctArts[2].artworkUri,
                     contentDescription = null,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize(),
-                    cornerRadius = 0.dp
+                    shape = RoundedCornerShape(0.dp),
+                    shadowElevation = 0.dp
                 )
-                NovaAlbumArtwork(
+                LiquidGlassArtwork(
                     artworkUri = distinctArts[3].artworkUri,
                     contentDescription = null,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize(),
-                    cornerRadius = 0.dp
+                    shape = RoundedCornerShape(0.dp),
+                    shadowElevation = 0.dp
                 )
             }
         }

@@ -63,8 +63,9 @@ import com.novamusic.player.BuildConfig
 import com.novamusic.player.data.model.AccentColorOption
 import com.novamusic.player.data.model.ArtworkStyle
 import com.novamusic.player.data.model.ThemeMode
-import com.novamusic.player.ui.components.LiquidGlassCard
 import com.novamusic.player.ui.components.LiquidGlassIconButton
+import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.LiquidGlassTopBar
 import com.novamusic.player.ui.components.SleepTimerDialog
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
@@ -75,6 +76,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: (() -> Unit)? = null,
     onOpenEqualizer: () -> Unit,
+    onOpenAbout: () -> Unit,
     bottomContentPadding: Dp
 ) {
     val settings by viewModel.appSettings.collectAsStateWithLifecycle()
@@ -87,7 +89,7 @@ fun SettingsScreen(
 
     val accent = MaterialTheme.colorScheme.primary
     val novaColors = LocalNovaColors.current
-    val dividerColor = novaColors.borderSubtle.copy(alpha = 0.65f)
+    val dividerColor = novaColors.borderSubtle.copy(alpha = 0.50f)
 
     val languages = remember {
         listOf(
@@ -103,26 +105,17 @@ fun SettingsScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
-            top = 10.dp,
             bottom = bottomContentPadding + 28.dp
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Floating Liquid Glass Top Header
+        // Floating iOS Liquid Glass Top Bar
         item {
-            LiquidGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                elevation = 14.dp,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (onBack != null) {
+            LiquidGlassTopBar(
+                title = "Settings",
+                subtitle = "${settings.themeMode.label} • ${settings.accentColor.label}",
+                leadingAction = if (onBack != null) {
+                    {
                         LiquidGlassIconButton(
                             icon = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = "Back",
@@ -130,28 +123,18 @@ fun SettingsScreen(
                             iconSize = 20.dp,
                             onClick = onBack
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
                     }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Settings",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "${settings.themeMode.label.uppercase()} LIQUID GLASS • ${settings.accentColor.label.uppercase()}",
-                            style = NovaMonoTelemetry.copy(fontSize = 10.sp),
-                            color = accent
-                        )
-                    }
-                }
-            }
+                } else null
+            )
         }
 
         // Appearance: Theme Mode & Accent Color
         item {
-            LiquidGlassSectionCard(title = "Appearance & Theme", icon = Icons.Rounded.Palette) {
+            LiquidGlassSectionCard(
+                title = "Appearance & Material",
+                icon = Icons.Rounded.Palette,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
                 Text(
                     text = "Liquid Glass Theme",
                     style = MaterialTheme.typography.labelLarge,
@@ -164,9 +147,9 @@ fun SettingsScreen(
                 ) {
                     ThemeMode.entries.forEach { mode ->
                         val selected = settings.themeMode == mode
-                        LiquidGlassCard(
+                        LiquidGlassSurface(
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(18.dp),
                             highlighted = selected,
                             elevation = if (selected) 12.dp else 4.dp,
                             contentPadding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
@@ -207,7 +190,7 @@ fun SettingsScreen(
                                     if (isSelected) swatchColor.copy(alpha = 0.22f) else Color.Transparent
                                 )
                                 .border(
-                                    width = if (isSelected) 1.5.dp else 0.8.dp,
+                                    width = if (isSelected) 1.4.dp else 0.7.dp,
                                     color = if (isSelected) swatchColor else novaColors.glassBorderBottom,
                                     shape = CircleShape
                                 )
@@ -233,7 +216,7 @@ fun SettingsScreen(
                                         )
                                     )
                                     .border(
-                                        width = 1.dp,
+                                        width = 0.9.dp,
                                         color = Color.White.copy(alpha = 0.45f),
                                         shape = CircleShape
                                     ),
@@ -253,7 +236,7 @@ fun SettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = dividerColor)
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 SettingsActionRow(
                     icon = Icons.Rounded.Language,
                     title = "Language",
@@ -265,28 +248,32 @@ fun SettingsScreen(
 
         // Audio & Playback Settings
         item {
-            LiquidGlassSectionCard(title = "Audio & Playback", icon = Icons.Rounded.Equalizer) {
+            LiquidGlassSectionCard(
+                title = "Audio & Playback",
+                icon = Icons.Rounded.Equalizer,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
                 SettingsSwitchRow(
                     title = "Gapless Playback",
                     subtitle = "Seamless transitions between consecutive tracks",
                     checked = settings.gaplessPlayback,
                     onCheckedChange = viewModel::setGaplessPlayback
                 )
-                HorizontalDivider(color = dividerColor)
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 SettingsSwitchRow(
                     title = "Playback Resume",
                     subtitle = "Remember last played track, queue, and position on restart",
                     checked = settings.resumePlaybackOnStart,
                     onCheckedChange = viewModel::setResumePlayback
                 )
-                HorizontalDivider(color = dividerColor)
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 SettingsActionRow(
                     icon = Icons.Rounded.Equalizer,
                     title = "Equalizer & DSP",
                     subtitle = "10-Band EQ, Bass Boost, Virtualizer, Loudness, Preamp",
                     onClick = onOpenEqualizer
                 )
-                HorizontalDivider(color = dividerColor)
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 SettingsActionRow(
                     icon = Icons.Rounded.Bedtime,
                     title = "Sleep Timer",
@@ -306,7 +293,11 @@ fun SettingsScreen(
 
         // Album Artwork Settings
         item {
-            LiquidGlassSectionCard(title = "Album Artwork", icon = Icons.Rounded.Album) {
+            LiquidGlassSectionCard(
+                title = "Album Artwork",
+                icon = Icons.Rounded.Album,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
                 Text(
                     text = "Now Playing Artwork Style",
                     style = MaterialTheme.typography.labelLarge,
@@ -321,9 +312,9 @@ fun SettingsScreen(
                         ) {
                             pair.forEach { style ->
                                 val selected = settings.artworkStyle == style
-                                LiquidGlassCard(
+                                LiquidGlassSurface(
                                     modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(16.dp),
+                                    shape = RoundedCornerShape(18.dp),
                                     highlighted = selected,
                                     elevation = if (selected) 10.dp else 4.dp,
                                     contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp),
@@ -355,7 +346,11 @@ fun SettingsScreen(
 
         // Library Scanning Settings
         item {
-            LiquidGlassSectionCard(title = "Library Scanning", icon = Icons.Rounded.LibraryMusic) {
+            LiquidGlassSectionCard(
+                title = "Library Scanning",
+                icon = Icons.Rounded.LibraryMusic,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
                 SettingsActionRow(
                     icon = Icons.Rounded.Refresh,
                     title = "Rescan Music Library",
@@ -365,14 +360,14 @@ fun SettingsScreen(
                     } else null,
                     onClick = viewModel::rescanLibrary
                 )
-                HorizontalDivider(color = dividerColor)
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 SettingsActionRow(
                     icon = Icons.Rounded.LibraryMusic,
                     title = "Minimum Track Duration",
                     subtitle = "Ignore clips shorter than ${settings.minTrackDurationSec}s",
                     onClick = { showMinDurationDialog = true }
                 )
-                HorizontalDivider(color = dividerColor)
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 SettingsActionRow(
                     icon = Icons.Rounded.DeleteSweep,
                     title = "Clear Playback History",
@@ -382,20 +377,60 @@ fun SettingsScreen(
             }
         }
 
-        // App Information
+        // App Information & Developer Credit
         item {
-            LiquidGlassSectionCard(title = "App Information", icon = Icons.Rounded.Info) {
+            LiquidGlassSectionCard(
+                title = "App Information",
+                icon = Icons.Rounded.Info,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                SettingsActionRow(
+                    icon = Icons.Rounded.Info,
+                    title = "About NOVA MUSIC",
+                    subtitle = "Created & Developed by kz4man, Mohamed",
+                    onClick = onOpenAbout
+                )
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 InfoLine("Application", "NOVA MUSIC")
-                HorizontalDivider(color = dividerColor.copy(alpha = 0.5f))
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
+                InfoLine("Developer", "kz4man, Mohamed")
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 InfoLine("Version", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                HorizontalDivider(color = dividerColor.copy(alpha = 0.5f))
-                InfoLine("Design System", "Liquid Glass Multi-Layer")
-                HorizontalDivider(color = dividerColor.copy(alpha = 0.5f))
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
+                InfoLine("Design System", "iOS 26 Liquid Glass")
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 InfoLine("Audio Engine", "Media3 ExoPlayer + MediaSession")
-                HorizontalDivider(color = dividerColor.copy(alpha = 0.5f))
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 InfoLine("DSP Engine", "Android AudioEffect / Dynamics")
-                HorizontalDivider(color = dividerColor.copy(alpha = 0.5f))
+                HorizontalDivider(color = dividerColor, thickness = 0.5.dp)
                 InfoLine("Storage", "100% Offline • Room & DataStore")
+            }
+        }
+
+        // Subtle Copyright Footer
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Created & Developed by kz4man, Mohamed",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.2.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "© 2026 kz4man, Mohamed. All Rights Reserved.",
+                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.25.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -493,12 +528,13 @@ fun SettingsScreen(
 private fun LiquidGlassSectionCard(
     title: String,
     icon: ImageVector,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     val accent = MaterialTheme.colorScheme.primary
-    LiquidGlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
+    LiquidGlassSurface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
         elevation = 14.dp,
         contentPadding = PaddingValues(18.dp)
     ) {
@@ -508,8 +544,7 @@ private fun LiquidGlassSectionCard(
                     modifier = Modifier
                         .size(30.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(accent.copy(alpha = 0.16f))
-                        .border(0.8.dp, accent.copy(alpha = 0.42f), RoundedCornerShape(10.dp)),
+                        .background(accent.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -590,8 +625,7 @@ private fun SettingsActionRow(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(novaColors.recessedSurface.copy(alpha = 0.85f))
-                .border(0.8.dp, novaColors.glassBorderBottom, RoundedCornerShape(12.dp)),
+                .background(novaColors.recessedSurface.copy(alpha = 0.85f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(

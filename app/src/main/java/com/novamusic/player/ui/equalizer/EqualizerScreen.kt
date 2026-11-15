@@ -1,11 +1,20 @@
 package com.novamusic.player.ui.equalizer
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -66,18 +75,19 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.data.model.EqualizerBandInfo
 import com.novamusic.player.ui.components.LiquidGlassButton
-import com.novamusic.player.ui.components.LiquidGlassCard
 import com.novamusic.player.ui.components.LiquidGlassIconButton
+import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.LiquidGlassTopBar
+import com.novamusic.player.ui.components.LocalReducedMotion
+import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
-import com.novamusic.player.ui.theme.NovaOrangeGlow
 import com.novamusic.player.ui.theme.NovaSuccess
 import java.util.Locale
 import kotlin.math.abs
@@ -95,123 +105,78 @@ fun EqualizerScreen(
     val customPresets by viewModel.customPresets.collectAsStateWithLifecycle()
     var showSavePresetDialog by remember { mutableStateOf(false) }
 
+    val palette = LocalArtworkPalette.current
     val accent = MaterialTheme.colorScheme.primary
     val novaColors = LocalNovaColors.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomContentPadding + 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(bottom = bottomContentPadding + 28.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        // Floating Liquid Glass Header
+        // Floating iOS Top Bar
         item {
-            LiquidGlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 10.dp),
-                shape = RoundedCornerShape(24.dp),
-                elevation = 12.dp,
-                highlighted = state.isEnabled,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (onBack != null) {
+            LiquidGlassTopBar(
+                title = "Equalizer",
+                subtitle = if (state.audioSessionId > 0) {
+                    "${state.engineDescription} • Session #${state.audioSessionId}"
+                } else {
+                    "Play a track to attach audio session"
+                },
+                leadingAction = if (onBack != null) {
+                    {
                         LiquidGlassIconButton(
                             icon = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = "Back",
-                            size = 38.dp,
-                            iconSize = 19.dp,
+                            size = 40.dp,
+                            iconSize = 20.dp,
                             onClick = onBack
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
                     }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Equalizer DSP",
-                            style = MaterialTheme.typography.headlineMedium
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
+                } else null,
+                trailingActions = {
+                    LiquidGlassIconButton(
+                        icon = Icons.Rounded.BookmarkAdd,
+                        contentDescription = "Save Custom Preset",
+                        size = 38.dp,
+                        iconSize = 18.dp,
+                        onClick = { showSavePresetDialog = true }
+                    )
+                    LiquidGlassIconButton(
+                        icon = Icons.Rounded.RestartAlt,
+                        contentDescription = "Reset Equalizer",
+                        size = 38.dp,
+                        iconSize = 18.dp,
+                        onClick = viewModel::resetEqualizer
+                    )
+                    LiquidGlassButton(
+                        onClick = { viewModel.setEnabled(!state.isEnabled) },
+                        highlighted = state.isEnabled,
+                        shape = RoundedCornerShape(18.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        when {
-                                            state.isEnabled && state.audioSessionId > 0 -> NovaSuccess
-                                            state.isSupported -> accent
-                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                        }
-                                    )
+                            Icon(
+                                imageVector = Icons.Rounded.PowerSettingsNew,
+                                contentDescription = if (state.isEnabled) "Disable EQ" else "Enable EQ",
+                                tint = if (state.isEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = if (state.audioSessionId > 0) {
-                                    "${state.engineDescription} • #${state.audioSessionId}"
-                                } else {
-                                    "Play audio to bind DSP session"
-                                },
-                                style = NovaMonoTelemetry.copy(fontSize = 10.sp),
-                                color = if (state.isSupported) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                text = if (state.isEnabled) "ON" else "OFF",
+                                style = NovaMonoTelemetry.copy(fontWeight = FontWeight.Bold),
+                                color = if (state.isEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        LiquidGlassIconButton(
-                            icon = Icons.Rounded.BookmarkAdd,
-                            contentDescription = "Save Custom Preset",
-                            size = 38.dp,
-                            iconSize = 18.dp,
-                            onClick = { showSavePresetDialog = true }
-                        )
-                        LiquidGlassIconButton(
-                            icon = Icons.Rounded.RestartAlt,
-                            contentDescription = "Reset Equalizer",
-                            size = 38.dp,
-                            iconSize = 18.dp,
-                            onClick = viewModel::resetEqualizer
-                        )
-                        LiquidGlassButton(
-                            onClick = { viewModel.setEnabled(!state.isEnabled) },
-                            highlighted = state.isEnabled,
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.PowerSettingsNew,
-                                    contentDescription = if (state.isEnabled) "Disable EQ" else "Enable EQ",
-                                    tint = if (state.isEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = if (state.isEnabled) "ON" else "OFF",
-                                    style = NovaMonoTelemetry.copy(fontWeight = FontWeight.Bold),
-                                    color = if (state.isEnabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
-            }
+            )
         }
 
-        // Floating Glass Presets Rail
+        // Glass Presets Selector
         item {
             Column {
                 Row(
@@ -221,32 +186,51 @@ fun EqualizerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "DSP Presets", style = MaterialTheme.typography.titleMedium)
-                    LiquidGlassCard(
-                        shape = RoundedCornerShape(10.dp),
-                        highlighted = true,
-                        elevation = 4.dp,
-                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp)
+                    Text(
+                        text = "Presets",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = state.activePresetName.uppercase(),
-                            style = NovaMonoTelemetry.copy(fontSize = 10.sp),
-                            color = accent
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        state.isEnabled && state.audioSessionId > 0 -> NovaSuccess
+                                        state.isSupported -> accent
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
                         )
+                        AnimatedContent(
+                            targetState = state.activePresetName.uppercase(),
+                            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+                            label = "eq_preset_badge"
+                        ) { presetTitle ->
+                            Text(
+                                text = presetTitle,
+                                style = NovaMonoTelemetry.copy(fontSize = 10.sp),
+                                color = accent
+                            )
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(viewModel.builtInPresetNames) { presetName ->
                         val isSelected = state.activePresetName == presetName
-                        LiquidGlassCard(
-                            shape = RoundedCornerShape(14.dp),
+                        LiquidGlassSurface(
+                            shape = RoundedCornerShape(18.dp),
                             highlighted = isSelected,
-                            elevation = if (isSelected) 10.dp else 4.dp,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+                            elevation = if (isSelected) 12.dp else 4.dp,
+                            contentPadding = PaddingValues(horizontal = 15.dp, vertical = 9.dp),
                             onClick = { viewModel.applyBuiltInPreset(presetName) }
                         ) {
                             Text(
@@ -260,10 +244,10 @@ fun EqualizerScreen(
                     }
                     items(customPresets, key = { "custom_${it.id}" }) { custom ->
                         val isSelected = state.activePresetName == custom.name
-                        LiquidGlassCard(
-                            shape = RoundedCornerShape(14.dp),
+                        LiquidGlassSurface(
+                            shape = RoundedCornerShape(18.dp),
                             highlighted = isSelected,
-                            elevation = if (isSelected) 10.dp else 4.dp,
+                            elevation = if (isSelected) 12.dp else 4.dp,
                             contentPadding = PaddingValues(start = 14.dp, end = 9.dp, top = 9.dp, bottom = 9.dp),
                             onClick = { viewModel.applyCustomPreset(custom) }
                         ) {
@@ -291,28 +275,28 @@ fun EqualizerScreen(
             }
         }
 
-        // Translucent Glass Frequency Response + 10-Band Slider Panel
+        // Translucent Optical Glass Frequency Response + Floating Faders
         item {
-            LiquidGlassCard(
+            LiquidGlassSurface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(28.dp),
-                elevation = 16.dp,
-                contentPadding = PaddingValues(vertical = 16.dp, horizontal = 12.dp)
+                shape = RoundedCornerShape(30.dp),
+                elevation = 18.dp,
+                contentPadding = PaddingValues(vertical = 18.dp, horizontal = 14.dp)
             ) {
                 Column {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 6.dp),
+                            .padding(horizontal = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(30.dp)
+                                    .size(32.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(accent.copy(alpha = 0.16f)),
                                 contentAlignment = Alignment.Center
@@ -324,47 +308,45 @@ fun EqualizerScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(9.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "${state.bands.size}-Band Liquid EQ",
-                                style = MaterialTheme.typography.titleMedium
+                                text = "${state.bands.size}-Band Audio Response",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
                         }
 
-                        // Animated Glass Level Visualizer
                         AnimatedLevelVisualizer(
                             enabled = state.isEnabled && state.audioSessionId > 0,
                             bandCount = 6,
-                            accentColor = accent
+                            accentColor = palette.glow
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Glass Oscilloscope Frequency Response Curve
                     FrequencyResponseCurve(
                         bands = state.bands,
                         minMb = state.minLevelMillibels,
                         maxMb = state.maxLevelMillibels,
                         enabled = state.isEnabled,
                         accentColor = accent,
+                        glowColor = palette.glow,
                         gridColor = novaColors.borderSubtle,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(98.dp)
-                            .padding(horizontal = 4.dp)
+                            .padding(horizontal = 2.dp)
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // 10-Band Liquid Glass Vertical Frequency Sliders
                     val scrollState = rememberScrollState()
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(scrollState)
                             .padding(horizontal = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         state.bands.forEach { band ->
                             VerticalEqBandFader(
@@ -373,6 +355,7 @@ fun EqualizerScreen(
                                 maxMb = state.maxLevelMillibels,
                                 enabled = state.isEnabled,
                                 accentColor = accent,
+                                glowColor = palette.glow,
                                 onValueChange = { newMb -> viewModel.setBandLevel(band.index, newMb) }
                             )
                         }
@@ -381,14 +364,14 @@ fun EqualizerScreen(
             }
         }
 
-        // Translucent Glass Tone & Hardware FX Panel
+        // Translucent Optical Glass Tone & Spatial FX Dials
         item {
-            LiquidGlassCard(
+            LiquidGlassSurface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(28.dp),
-                elevation = 16.dp,
+                shape = RoundedCornerShape(30.dp),
+                elevation = 18.dp,
                 contentPadding = PaddingValues(18.dp)
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -399,10 +382,10 @@ fun EqualizerScreen(
                     ) {
                         Text(
                             text = "Tone & Spatial FX",
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            text = "SLIDE DIALS ↕",
+                            text = "DRAG VERTICALLY ↕",
                             style = NovaMonoTelemetry.copy(fontSize = 10.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -531,7 +514,6 @@ private fun AnimatedLevelVisualizer(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
             .background(LocalNovaColors.current.recessedSurface)
-            .border(0.7.dp, LocalNovaColors.current.borderSubtle, RoundedCornerShape(10.dp))
             .padding(horizontal = 8.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.Bottom
@@ -560,17 +542,36 @@ private fun FrequencyResponseCurve(
     maxMb: Int,
     enabled: Boolean,
     accentColor: Color,
+    glowColor: Color,
     gridColor: Color,
     modifier: Modifier = Modifier
 ) {
     val novaColors = LocalNovaColors.current
-    val activeColor = if (enabled) accentColor else Color(0xFF727684)
+    val reducedMotion = LocalReducedMotion.current
+    val activeColor by animateColorAsState(
+        targetValue = if (enabled) accentColor else Color(0xFF727684),
+        animationSpec = if (reducedMotion) snap() else tween(260),
+        label = "eq_curve_color"
+    )
+    val range = (maxMb - minMb).coerceAtLeast(1).toFloat()
+    val animatedNorms = bands.map { band ->
+        val norm by animateFloatAsState(
+            targetValue = ((band.levelMillibels - minMb) / range).coerceIn(0f, 1f),
+            animationSpec = if (reducedMotion) snap() else spring(
+                dampingRatio = 0.78f,
+                stiffness = Spring.StiffnessMediumLow
+            ),
+            label = "eq_curve_band_${band.index}"
+        )
+        norm
+    }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
             .background(novaColors.recessedSurface)
             .border(
-                width = 0.9.dp,
+                width = 0.7.dp,
                 brush = Brush.linearGradient(listOf(novaColors.glassBorderTop, novaColors.glassBorderBottom)),
                 shape = RoundedCornerShape(18.dp)
             )
@@ -610,35 +611,33 @@ private fun FrequencyResponseCurve(
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
 
             drawLine(
-                color = gridColor.copy(alpha = 0.65f),
+                color = gridColor.copy(alpha = 0.55f),
                 start = Offset(padStart, midY),
                 end = Offset(w - padEnd, midY),
                 strokeWidth = 1.dp.toPx()
             )
             drawLine(
-                color = gridColor.copy(alpha = 0.35f),
+                color = gridColor.copy(alpha = 0.30f),
                 start = Offset(padStart, padY),
                 end = Offset(w - padEnd, padY),
                 strokeWidth = 0.8.dp.toPx(),
                 pathEffect = dashEffect
             )
             drawLine(
-                color = gridColor.copy(alpha = 0.35f),
+                color = gridColor.copy(alpha = 0.30f),
                 start = Offset(padStart, h - padY),
                 end = Offset(w - padEnd, h - padY),
                 strokeWidth = 0.8.dp.toPx(),
                 pathEffect = dashEffect
             )
 
-            if (bands.isEmpty()) return@Canvas
-            val range = (maxMb - minMb).coerceAtLeast(1).toFloat()
+            if (animatedNorms.isEmpty()) return@Canvas
 
-            val points = bands.mapIndexed { index, band ->
-                val x = if (bands.size == 1) w / 2f else padStart + (index.toFloat() / (bands.size - 1)) * usableW
-                val norm = ((band.levelMillibels - minMb) / range).coerceIn(0f, 1f)
+            val points = animatedNorms.mapIndexed { index, norm ->
+                val x = if (animatedNorms.size == 1) w / 2f else padStart + (index.toFloat() / (animatedNorms.size - 1)) * usableW
                 val y = padY + (1f - norm) * usableH
                 drawLine(
-                    color = gridColor.copy(alpha = 0.22f),
+                    color = gridColor.copy(alpha = 0.18f),
                     start = Offset(x, padY),
                     end = Offset(x, h - padY),
                     strokeWidth = 0.7.dp.toPx()
@@ -667,7 +666,7 @@ private fun FrequencyResponseCurve(
                 path = fillPath,
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        activeColor.copy(alpha = 0.42f),
+                        glowColor.copy(alpha = if (enabled) 0.42f else 0.18f),
                         activeColor.copy(alpha = 0.04f)
                     )
                 )
@@ -676,7 +675,7 @@ private fun FrequencyResponseCurve(
             if (enabled) {
                 drawPath(
                     path = linePath,
-                    color = activeColor.copy(alpha = 0.32f),
+                    color = glowColor.copy(alpha = 0.30f),
                     style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round)
                 )
             }
@@ -689,12 +688,12 @@ private fun FrequencyResponseCurve(
             points.forEach { pt ->
                 drawCircle(
                     color = activeColor.copy(alpha = 0.38f),
-                    radius = 5.5.dp.toPx(),
+                    radius = 5.dp.toPx(),
                     center = pt
                 )
                 drawCircle(
                     color = Color.White,
-                    radius = 2.4.dp.toPx(),
+                    radius = 2.2.dp.toPx(),
                     center = pt
                 )
             }
@@ -713,7 +712,16 @@ private fun RotaryAudioKnob(
     onValueChange: (Float) -> Unit
 ) {
     val novaColors = LocalNovaColors.current
+    val reducedMotion = LocalReducedMotion.current
     val clamped = value.coerceIn(0f, 1f)
+    val animatedClamped by animateFloatAsState(
+        targetValue = clamped,
+        animationSpec = if (reducedMotion) snap() else spring(
+            dampingRatio = 0.78f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "eq_knob_$title"
+    )
     val activeColor = if (enabled) accentColor else Color(0xFF6B7080)
     val trackColor = novaColors.recessedSurface
     val border = novaColors.borderSubtle
@@ -748,7 +756,7 @@ private fun RotaryAudioKnob(
                 for (step in 0..12) {
                     val deg = startAngle + (step / 12f) * totalSweep
                     val rad = Math.toRadians(deg.toDouble())
-                    val isLit = (step / 12f) <= clamped + 0.01f
+                    val isLit = (step / 12f) <= animatedClamped + 0.01f
                     drawLine(
                         color = if (isLit && enabled) activeColor.copy(alpha = 0.9f) else border,
                         start = Offset(center.x + (cos(rad) * tickInnerR).toFloat(), center.y + (sin(rad) * tickInnerR).toFloat()),
@@ -775,7 +783,7 @@ private fun RotaryAudioKnob(
 
                 if (bipolar) {
                     val midAngle = startAngle + totalSweep / 2f
-                    val sweep = (clamped - 0.5f) * totalSweep
+                    val sweep = (animatedClamped - 0.5f) * totalSweep
                     drawArc(
                         color = activeColor,
                         startAngle = midAngle,
@@ -789,7 +797,7 @@ private fun RotaryAudioKnob(
                     drawArc(
                         color = activeColor,
                         startAngle = startAngle,
-                        sweepAngle = clamped * totalSweep,
+                        sweepAngle = animatedClamped * totalSweep,
                         useCenter = false,
                         topLeft = topLeft,
                         size = arcSize,
@@ -803,7 +811,7 @@ private fun RotaryAudioKnob(
                         colors = if (novaColors.isLight) {
                             listOf(Color(0xFFFFFFFF), Color(0xFFD8DEE9))
                         } else {
-                            listOf(Color(0xFF2D303C), Color(0xFF101116))
+                            listOf(Color(0xFF2B2E3A), Color(0xFF101116))
                         },
                         center = Offset(center.x - knobRadius * 0.25f, center.y - knobRadius * 0.25f),
                         radius = knobRadius * 1.4f
@@ -812,13 +820,13 @@ private fun RotaryAudioKnob(
                     center = center
                 )
                 drawCircle(
-                    color = novaColors.glassBorderTop.copy(alpha = 0.5f),
+                    color = novaColors.glassBorderTop.copy(alpha = 0.45f),
                     radius = knobRadius,
                     center = center,
-                    style = Stroke(width = 1.dp.toPx())
+                    style = Stroke(width = 0.8.dp.toPx())
                 )
 
-                val angleRad = Math.toRadians((startAngle + clamped * totalSweep).toDouble())
+                val angleRad = Math.toRadians((startAngle + animatedClamped * totalSweep).toDouble())
                 val innerR = knobRadius * 0.42f
                 val outerR = knobRadius * 0.8f
                 drawLine(
@@ -841,7 +849,6 @@ private fun RotaryAudioKnob(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .background(novaColors.recessedSurface)
-                .border(0.7.dp, if (enabled) activeColor.copy(alpha = 0.42f) else border, RoundedCornerShape(8.dp))
                 .padding(horizontal = 8.dp, vertical = 2.dp)
         ) {
             Text(
@@ -868,6 +875,7 @@ private fun VerticalEqBandFader(
     maxMb: Int,
     enabled: Boolean,
     accentColor: Color,
+    glowColor: Color,
     onValueChange: (Int) -> Unit
 ) {
     val novaColors = LocalNovaColors.current
@@ -882,12 +890,20 @@ private fun VerticalEqBandFader(
     val latestMax by rememberUpdatedState(maxMb)
     val latestEnabled by rememberUpdatedState(enabled)
 
+    val range = (maxMb - minMb).coerceAtLeast(1).toFloat()
+    val targetNorm = ((band.levelMillibels - minMb) / range).coerceIn(0f, 1f)
+    val animatedNorm by animateFloatAsState(
+        targetValue = targetNorm,
+        animationSpec = spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow),
+        label = "eq_band_norm_${band.index}"
+    )
+
     Column(
         modifier = Modifier
             .width(48.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(novaColors.recessedSurface)
-            .border(0.7.dp, novaColors.glassBorderTop.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+            .border(0.6.dp, novaColors.glassBorderTop.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -923,8 +939,6 @@ private fun VerticalEqBandFader(
                 },
             contentAlignment = Alignment.Center
         ) {
-            val range = (maxMb - minMb).coerceAtLeast(1).toFloat()
-            val normalized = ((band.levelMillibels - minMb) / range).coerceIn(0f, 1f)
             val zeroNormalized = ((0 - minMb) / range).coerceIn(0f, 1f)
 
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -940,14 +954,14 @@ private fun VerticalEqBandFader(
                     cornerRadius = CornerRadius(trackWidth / 2f)
                 )
 
-                val thumbY = padY + (1f - normalized) * usableHeight
+                val thumbY = padY + (1f - animatedNorm) * usableHeight
                 val zeroY = padY + (1f - zeroNormalized) * usableHeight
 
                 drawLine(
                     color = inactiveColor,
                     start = Offset(centerX - 11.dp.toPx(), zeroY),
                     end = Offset(centerX + 11.dp.toPx(), zeroY),
-                    strokeWidth = 1.3.dp.toPx()
+                    strokeWidth = 1.2.dp.toPx()
                 )
 
                 val topY = minOf(thumbY, zeroY)
@@ -955,7 +969,7 @@ private fun VerticalEqBandFader(
                 if (barHeight > 1f) {
                     drawRoundRect(
                         brush = Brush.verticalGradient(
-                            colors = listOf(NovaOrangeGlow, activeFill)
+                            colors = listOf(glowColor, activeFill)
                         ),
                         topLeft = Offset(centerX - trackWidth / 2f, topY),
                         size = Size(trackWidth, barHeight),
@@ -963,20 +977,19 @@ private fun VerticalEqBandFader(
                     )
                 }
 
-                // Glowing Liquid Glass Thumb Orb
                 drawCircle(
                     color = activeFill.copy(alpha = 0.30f),
-                    radius = 12.5.dp.toPx(),
+                    radius = 12.dp.toPx(),
                     center = Offset(centerX, thumbY)
                 )
                 drawCircle(
                     color = Color.White,
-                    radius = 8.5.dp.toPx(),
+                    radius = 8.dp.toPx(),
                     center = Offset(centerX, thumbY)
                 )
                 drawCircle(
                     color = activeFill,
-                    radius = 4.dp.toPx(),
+                    radius = 3.8.dp.toPx(),
                     center = Offset(centerX, thumbY)
                 )
             }

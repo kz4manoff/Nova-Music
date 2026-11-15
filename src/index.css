@@ -1,1 +1,64 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    --nova-accent: #FF8A32;
+    --nova-accent-glow: #FFB36B;
+    --nova-accent-deep: #D95F0E;
+  }
+
+  html {
+    font-family: var(--font-sans);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+@keyframes nova-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-vinyl-spin {
+  animation: nova-spin 14s linear infinite;
+}
+
+.animate-vinyl-paused {
+  animation: nova-spin 14s linear infinite;
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-vinyl-spin,
+  .animate-vinyl-paused {
+    animation: none;
+  }
+}
+
+/* Custom slim Liquid Glass scrollbars */
+.nova-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.nova-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nova-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+
+.dark .nova-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+}

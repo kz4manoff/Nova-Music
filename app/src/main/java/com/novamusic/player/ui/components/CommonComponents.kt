@@ -1,37 +1,24 @@
 package com.novamusic.player.ui.components
 
 import android.net.Uri
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -51,13 +38,9 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,14 +48,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -80,19 +61,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
+import androidx.compose.ui.unit.sp
 import com.novamusic.player.data.model.AudioFileInfo
 import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.data.model.PlaylistWithSongs
@@ -100,8 +75,6 @@ import com.novamusic.player.data.model.SleepTimerState
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
-import com.novamusic.player.ui.theme.NovaOrangeDeep
-import com.novamusic.player.ui.theme.NovaOrangeGlow
 import com.novamusic.player.utils.FormatUtils
 
 @Composable
@@ -176,75 +149,15 @@ fun NovaAlbumArtwork(
     highRes: Boolean = true,
     fallbackIcon: ImageVector = Icons.Rounded.MusicNote
 ) {
-    val context = LocalContext.current
-    val shape = RoundedCornerShape(cornerRadius)
-    val accent = MaterialTheme.colorScheme.primary
-    val novaColors = LocalNovaColors.current
-
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .background(
-                Brush.radialGradient(
-                    colors = if (novaColors.isLight) {
-                        listOf(
-                            accent.copy(alpha = 0.24f),
-                            Color(0xFFE6EAF3),
-                            Color(0xFFDCE2EE)
-                        )
-                    } else {
-                        listOf(
-                            accent.copy(alpha = 0.28f),
-                            Color(0xFF191B24),
-                            Color(0xFF0A0B0F)
-                        )
-                    }
-                )
-            )
-            .border(
-                width = 0.9.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(novaColors.glassBorderTop, novaColors.glassBorderBottom)
-                ),
-                shape = shape
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        if (artworkUri != null) {
-            SubcomposeAsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(artworkUri)
-                    .crossfade(true)
-                    .apply {
-                        if (!highRes) size(256)
-                    }
-                    .build(),
-                contentDescription = contentDescription,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                error = {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = fallbackIcon,
-                            contentDescription = null,
-                            tint = accent.copy(alpha = 0.85f),
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-            )
-        } else {
-            Icon(
-                imageVector = fallbackIcon,
-                contentDescription = null,
-                tint = accent.copy(alpha = 0.85f),
-                modifier = Modifier.size(28.dp)
-            )
-        }
-    }
+    LiquidGlassArtwork(
+        artworkUri = artworkUri,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        shape = RoundedCornerShape(cornerRadius),
+        shadowElevation = if (cornerRadius >= 20.dp) 18.dp else 8.dp,
+        highRes = highRes,
+        fallbackIcon = fallbackIcon
+    )
 }
 
 @Composable
@@ -260,22 +173,13 @@ fun SongListItem(
     highResArtwork: Boolean = true
 ) {
     val accent = MaterialTheme.colorScheme.primary
-    val novaColors = LocalNovaColors.current
     val favScale by animateFloatAsState(
-        targetValue = if (isFavorite) 1.15f else 1f,
-        animationSpec = spring(dampingRatio = 0.45f),
+        targetValue = if (isFavorite) 1.18f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMedium),
         label = "row_fav_scale"
     )
 
-    LiquidGlassCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 3.dp),
-        shape = RoundedCornerShape(18.dp),
-        highlighted = isCurrentSong,
-        elevation = if (isCurrentSong) 12.dp else 4.dp,
-        onClick = onClick
-    ) {
+    val rowContent: @Composable () -> Unit = {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -283,11 +187,12 @@ fun SongListItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(contentAlignment = Alignment.Center) {
-                NovaAlbumArtwork(
+                LiquidGlassArtwork(
                     artworkUri = song.artworkUri,
                     contentDescription = song.album,
                     modifier = Modifier.size(52.dp),
-                    cornerRadius = 13.dp,
+                    shape = RoundedCornerShape(13.dp),
+                    shadowElevation = if (isCurrentSong) 14.dp else 6.dp,
                     highRes = highResArtwork
                 )
                 if (isCurrentSong) {
@@ -295,21 +200,23 @@ fun SongListItem(
                         modifier = Modifier
                             .size(52.dp)
                             .clip(RoundedCornerShape(13.dp))
-                            .background(Color.Black.copy(alpha = 0.56f)),
+                            .background(Color.Black.copy(alpha = 0.48f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        AnimatedEqualizerBars(isPlaying = isPlaying, color = accent)
+                        AnimatedEqualizerBars(isPlaying = isPlaying, color = Color.White)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = song.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (isCurrentSong) accent else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = if (isCurrentSong) FontWeight.Bold else FontWeight.SemiBold
+                    ),
+                    color = if (isCurrentSong) accent else MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -326,29 +233,21 @@ fun SongListItem(
                     Text(
                         text = " • ${FormatUtils.formatDuration(song.durationMs)}",
                         style = NovaMonoTelemetry.copy(fontWeight = FontWeight.Normal),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                     )
                     val ext = song.fileExtension
-                    if (ext.isNotBlank()) {
+                    if (ext.isNotBlank() && ext in setOf("FLAC", "WAV", "OPUS", "ALAC")) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        val isHiRes = ext in setOf("FLAC", "WAV", "OPUS")
                         Text(
                             text = ext,
                             style = NovaMonoTelemetry.copy(
-                                fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Bold
                             ),
-                            color = if (isHiRes) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = accent,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (isHiRes) accent.copy(alpha = 0.14f) else novaColors.recessedSurface
-                                )
-                                .border(
-                                    width = 0.7.dp,
-                                    color = if (isHiRes) accent.copy(alpha = 0.55f) else novaColors.borderSubtle,
-                                    shape = RoundedCornerShape(6.dp)
-                                )
+                                .background(accent.copy(alpha = 0.14f))
                                 .padding(horizontal = 5.dp, vertical = 1.dp)
                         )
                     }
@@ -364,7 +263,7 @@ fun SongListItem(
                 Icon(
                     imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = "Favorite",
-                    tint = if (isFavorite) accent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    tint = if (isFavorite) accent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                     modifier = Modifier.size(19.dp)
                 )
             }
@@ -376,15 +275,43 @@ fun SongListItem(
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,
                     contentDescription = "Track Options",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                     modifier = Modifier.size(19.dp)
                 )
             }
         }
     }
+
+    if (isCurrentSong) {
+        LiquidGlassSurface(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 3.dp),
+            shape = RoundedCornerShape(20.dp),
+            highlighted = true,
+            elevation = 14.dp,
+            onClick = onClick
+        ) {
+            rowContent()
+        }
+    } else {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick)
+        ) {
+            rowContent()
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 76.dp, end = 12.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+            )
+        }
+    }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MiniPlayer(
     playerState: PlayerUiState,
@@ -394,187 +321,14 @@ fun MiniPlayer(
     onOpenNowPlaying: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val song = playerState.currentSong
-    AnimatedVisibility(
-        visible = song != null,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+    LiquidGlassMiniPlayer(
+        playerState = playerState,
+        onTogglePlayPause = onTogglePlayPause,
+        onPrevious = onPrevious,
+        onNext = onNext,
+        onOpenNowPlaying = onOpenNowPlaying,
         modifier = modifier
-    ) {
-        if (song != null) {
-            val progress = if (playerState.durationMs > 0L) {
-                (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-            val accent = MaterialTheme.colorScheme.primary
-            val novaColors = LocalNovaColors.current
-            var dragX by remember { mutableFloatStateOf(0f) }
-            var dragY by remember { mutableFloatStateOf(0f) }
-
-            LiquidGlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .pointerInput(song.id) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (dragX < -65f) onNext()
-                                else if (dragX > 65f) onPrevious()
-                                dragX = 0f
-                            },
-                            onDragCancel = { dragX = 0f },
-                            onHorizontalDrag = { _, dragAmount -> dragX += dragAmount }
-                        )
-                    }
-                    .pointerInput(song.id) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (dragY < -50f) onOpenNowPlaying()
-                                dragY = 0f
-                            },
-                            onDragCancel = { dragY = 0f },
-                            onVerticalDrag = { _, dragAmount -> dragY += dragAmount }
-                        )
-                    },
-                shape = RoundedCornerShape(24.dp),
-                highlighted = true,
-                elevation = 18.dp,
-                onClick = onOpenNowPlaying
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            NovaAlbumArtwork(
-                                artworkUri = song.artworkUri,
-                                contentDescription = song.album,
-                                modifier = Modifier.size(48.dp),
-                                cornerRadius = 13.dp
-                            )
-                            if (playerState.isPlaying) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(RoundedCornerShape(13.dp))
-                                        .background(Color.Black.copy(alpha = 0.45f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    AnimatedEqualizerBars(isPlaying = true, color = accent)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = song.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                modifier = Modifier.basicMarquee()
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = song.artist,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                                Text(
-                                    text = " • ${FormatUtils.formatDuration(playerState.positionMs)}",
-                                    style = NovaMonoTelemetry,
-                                    color = accent
-                                )
-                            }
-                        }
-
-                        LiquidGlassIconButton(
-                            icon = Icons.Rounded.SkipPrevious,
-                            contentDescription = "Previous",
-                            size = 34.dp,
-                            iconSize = 18.dp,
-                            onClick = onPrevious
-                        )
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .shadow(10.dp, CircleShape, ambientColor = accent, spotColor = accent)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(NovaOrangeGlow, accent, NovaOrangeDeep)
-                                    )
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = Color.White.copy(alpha = 0.65f),
-                                    shape = CircleShape
-                                )
-                                .clickable(onClick = onTogglePlayPause),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            AnimatedContent(
-                                targetState = playerState.isPlaying,
-                                transitionSpec = {
-                                    (fadeIn(tween(130)) + scaleIn(initialScale = 0.8f)) togetherWith
-                                        (fadeOut(tween(100)) + scaleOut(targetScale = 0.8f))
-                                },
-                                label = "mini_play_morph"
-                            ) { playing ->
-                                Icon(
-                                    imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                    contentDescription = if (playing) "Pause" else "Play",
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        LiquidGlassIconButton(
-                            icon = Icons.Rounded.SkipNext,
-                            contentDescription = "Next",
-                            size = 34.dp,
-                            iconSize = 18.dp,
-                            onClick = onNext
-                        )
-                    }
-
-                    // Luminous liquid glass edge progress filament
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.6.dp)
-                            .background(novaColors.borderSubtle.copy(alpha = 0.45f))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(progress)
-                                .height(2.6.dp)
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(accent.copy(alpha = 0.72f), NovaOrangeGlow, accent)
-                                    )
-                                )
-                        )
-                    }
-                }
-            }
-        }
-    }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -590,14 +344,11 @@ fun SongOptionsBottomSheet(
     onViewLyrics: () -> Unit,
     onViewInfo: () -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = LocalNovaColors.current.elevatedSurface
-    ) {
+    LiquidGlassSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 24.dp)
+                .padding(bottom = 26.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -605,17 +356,18 @@ fun SongOptionsBottomSheet(
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                NovaAlbumArtwork(
+                LiquidGlassArtwork(
                     artworkUri = song.artworkUri,
                     contentDescription = song.album,
-                    modifier = Modifier.size(56.dp),
-                    cornerRadius = 14.dp
+                    modifier = Modifier.size(58.dp),
+                    shape = RoundedCornerShape(15.dp),
+                    shadowElevation = 14.dp
                 )
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = song.title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -635,8 +387,9 @@ fun SongOptionsBottomSheet(
             }
 
             HorizontalDivider(
-                modifier = Modifier.padding(vertical = 4.dp),
-                color = LocalNovaColors.current.borderSubtle
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                thickness = 0.6.dp,
+                color = LocalNovaColors.current.borderSubtle.copy(alpha = 0.5f)
             )
 
             SheetActionItem(Icons.Rounded.PlaylistPlay, "Play Next") {
@@ -686,22 +439,22 @@ private fun SheetActionItem(
         Box(
             modifier = Modifier
                 .size(38.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-                .border(0.8.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+                .border(0.6.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(19.dp)
             )
         }
         Spacer(modifier = Modifier.width(14.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
             color = MaterialTheme.colorScheme.onSurface
         )
     }

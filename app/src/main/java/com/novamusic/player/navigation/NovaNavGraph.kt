@@ -3,11 +3,19 @@ package com.novamusic.player.navigation
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -19,14 +27,15 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -49,9 +60,12 @@ import com.novamusic.player.AppContainer
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.ui.NovaViewModelFactory
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
+import com.novamusic.player.ui.components.LiquidGlassMiniPlayer
 import com.novamusic.player.ui.components.LiquidGlassNavTab
-import com.novamusic.player.ui.components.LiquidGlassNavigationBar
-import com.novamusic.player.ui.components.MiniPlayer
+import com.novamusic.player.ui.components.LiquidGlassTabBar
+import com.novamusic.player.ui.components.LocalReducedMotion
+import com.novamusic.player.ui.components.rememberReducedMotion
+import kotlin.math.roundToInt
 import com.novamusic.player.ui.equalizer.EqualizerScreen
 import com.novamusic.player.ui.equalizer.EqualizerViewModel
 import com.novamusic.player.ui.home.HomeScreen
@@ -65,8 +79,12 @@ import com.novamusic.player.ui.player.PlayerViewModel
 import com.novamusic.player.ui.playlists.PlaylistDetailScreen
 import com.novamusic.player.ui.playlists.PlaylistsScreen
 import com.novamusic.player.ui.playlists.PlaylistsViewModel
+import com.novamusic.player.ui.search.SearchScreen
+import com.novamusic.player.ui.settings.AboutScreen
 import com.novamusic.player.ui.settings.SettingsScreen
 import com.novamusic.player.ui.settings.SettingsViewModel
+import com.novamusic.player.ui.theme.LocalArtworkPalette
+import com.novamusic.player.ui.theme.rememberArtworkPalette
 
 @Composable
 fun NovaMainAppShell(
@@ -89,6 +107,11 @@ fun NovaMainAppShell(
     var showNowPlaying by remember { mutableStateOf(openNowPlayingTrigger > 0) }
     var lyricsTargetSong by remember { mutableStateOf<Song?>(null) }
 
+    val artworkPalette = rememberArtworkPalette(
+        artworkUri = playerState.currentSong?.artworkUri,
+        fallbackAccent = MaterialTheme.colorScheme.primary
+    )
+
     LaunchedEffect(openNowPlayingTrigger) {
         if (openNowPlayingTrigger > 0) {
             showNowPlaying = true
@@ -105,317 +128,444 @@ fun NovaMainAppShell(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: NovaDestinations.HOME
 
+    // Required 5 Floating Liquid Glass Tabs: Home, Library, Search, Playlists, Settings
     val bottomTabs = remember {
         listOf(
             LiquidGlassNavTab(NovaDestinations.HOME, "Home", Icons.Rounded.Home),
             LiquidGlassNavTab(NovaDestinations.LIBRARY, "Library", Icons.Rounded.LibraryMusic),
+            LiquidGlassNavTab(NovaDestinations.SEARCH, "Search", Icons.Rounded.Search),
             LiquidGlassNavTab(NovaDestinations.PLAYLISTS, "Playlists", Icons.Rounded.QueueMusic),
-            LiquidGlassNavTab(NovaDestinations.EQUALIZER, "EQ", Icons.Rounded.Equalizer),
             LiquidGlassNavTab(NovaDestinations.SETTINGS, "Settings", Icons.Rounded.Settings)
         )
     }
 
-    val miniPlayerHeight = if (playerState.currentSong != null) 88.dp else 0.dp
+    val navigateTab: (String) -> Unit = { route ->
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Live blurred album artwork + ambient liquid refraction backdrop behind all screens
-        LiquidGlassBackdrop(
-            artworkUri = playerState.currentSong?.artworkUri,
-            isPlaying = playerState.isPlaying,
-            intensity = 0.9f
-        )
+    val miniPlayerHeight = if (playerState.currentSong != null) 86.dp else 0.dp
+    val reducedMotion = rememberReducedMotion()
+    val overlayOpen = showNowPlaying || lyricsTargetSong != null
+    val bgScale by animateFloatAsState(
+        targetValue = if (overlayOpen && !reducedMotion) 0.945f else 1f,
+        animationSpec = if (reducedMotion) snap() else spring(
+            dampingRatio = 0.86f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "shell_bg_scale"
+    )
+    val bgAlpha by animateFloatAsState(
+        targetValue = if (overlayOpen) 0.65f else 1f,
+        animationSpec = if (reducedMotion) snap() else tween(260, easing = FastOutSlowInEasing),
+        label = "shell_bg_alpha"
+    )
 
-        Scaffold(
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = Color.Transparent,
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-            bottomBar = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
-                                    MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
+    CompositionLocalProvider(
+        LocalArtworkPalette provides artworkPalette,
+        LocalReducedMotion provides reducedMotion
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Live blurred album artwork + extracted color ambient light scatter behind all screens
+            LiquidGlassBackdrop(
+                artworkUri = playerState.currentSong?.artworkUri,
+                isPlaying = playerState.isPlaying,
+                intensity = 0.92f
+            )
+
+            Scaffold(
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                containerColor = Color.Transparent,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = bgScale
+                        scaleY = bgScale
+                        alpha = bgAlpha
+                    }
+                    .statusBarsPadding(),
+                bottomBar = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
+                                        MaterialTheme.colorScheme.background.copy(alpha = 0.84f)
+                                    )
                                 )
                             )
+                            .navigationBarsPadding()
+                    ) {
+                        LiquidGlassMiniPlayer(
+                            playerState = playerState,
+                            onTogglePlayPause = playerViewModel::togglePlayPause,
+                            onPrevious = playerViewModel::skipToPrevious,
+                            onNext = playerViewModel::skipToNext,
+                            onOpenNowPlaying = { showNowPlaying = true }
                         )
-                        .navigationBarsPadding()
-                ) {
-                    MiniPlayer(
-                        playerState = playerState,
-                        onTogglePlayPause = playerViewModel::togglePlayPause,
-                        onPrevious = playerViewModel::skipToPrevious,
-                        onNext = playerViewModel::skipToNext,
-                        onOpenNowPlaying = { showNowPlaying = true }
-                    )
 
-                    LiquidGlassNavigationBar(
-                        tabs = bottomTabs,
-                        currentRoute = currentRoute,
-                        isEqualizerActive = eqState.isEnabled,
-                        onSelectTab = { tab ->
-                            navController.navigate(tab.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
+                        LiquidGlassTabBar(
+                            tabs = bottomTabs,
+                            currentRoute = currentRoute,
+                            onSelectTab = { tab -> navigateTab(tab.route) }
+                        )
+                    }
+                }
+            ) { innerPadding ->
+                NavHost(
+                    navController = navController,
+                    startDestination = NovaDestinations.HOME,
+                    enterTransition = {
+                        if (reducedMotion) {
+                            fadeIn(tween(90))
+                        } else {
+                            fadeIn(tween(260, easing = FastOutSlowInEasing)) +
+                                slideInHorizontally(
+                                    animationSpec = spring(dampingRatio = 0.88f, stiffness = 360f),
+                                    initialOffsetX = { (it * 0.05f).roundToInt() }
+                                ) +
+                                scaleIn(
+                                    initialScale = 0.968f,
+                                    animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMedium)
+                                )
                         }
-                    )
-                }
-            }
-        ) { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = NovaDestinations.HOME,
-                enterTransition = {
-                    fadeIn(tween(240)) + scaleIn(initialScale = 0.985f, animationSpec = tween(240))
-                },
-                exitTransition = { fadeOut(tween(180)) },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = innerPadding.calculateBottomPadding())
-            ) {
-                composable(NovaDestinations.HOME) {
-                    HomeScreen(
-                        viewModel = homeViewModel,
-                        isEqualizerActive = eqState.isEnabled,
-                        onOpenSearch = { navController.navigate(NovaDestinations.LIBRARY_SEARCH) },
-                        onOpenEqualizer = { navController.navigate(NovaDestinations.EQUALIZER) },
-                        onOpenSettings = { navController.navigate(NovaDestinations.SETTINGS) },
-                        onOpenNowPlaying = { showNowPlaying = true },
-                        onOpenAlbum = { albumId -> navController.navigate(NovaDestinations.albumDetail(albumId)) },
-                        onOpenArtist = { artist -> navController.navigate(NovaDestinations.artistDetail(artist)) },
-                        onOpenPlaylist = { pid -> navController.navigate(NovaDestinations.playlistDetail(pid)) },
-                        onOpenLibrary = { navController.navigate(NovaDestinations.LIBRARY) },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(
-                    route = "library?search={search}",
-                    arguments = listOf(navArgument("search") {
-                        type = NavType.BoolType
-                        defaultValue = false
-                    })
-                ) { entry ->
-                    val focusSearch = entry.arguments?.getBoolean("search") ?: false
-                    LibraryScreen(
-                        viewModel = libraryViewModel,
-                        initialFocusSearch = focusSearch,
-                        onOpenAlbum = { albumId -> navController.navigate(NovaDestinations.albumDetail(albumId)) },
-                        onOpenArtist = { artist -> navController.navigate(NovaDestinations.artistDetail(artist)) },
-                        onOpenFolder = { path -> navController.navigate(NovaDestinations.folderDetail(path)) },
-                        onOpenGenre = { genre -> navController.navigate(NovaDestinations.genreDetail(genre)) },
-                        onOpenLyricsForSong = { song -> lyricsTargetSong = song },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(NovaDestinations.PLAYLISTS) {
-                    PlaylistsScreen(
-                        viewModel = playlistsViewModel,
-                        onOpenPlaylist = { pid -> navController.navigate(NovaDestinations.playlistDetail(pid)) },
-                        onOpenFavorites = { navController.navigate(NovaDestinations.FAVORITES_DETAIL) },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(NovaDestinations.EQUALIZER) {
-                    EqualizerScreen(
-                        viewModel = equalizerViewModel,
-                        onBack = null,
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(NovaDestinations.SETTINGS) {
-                    SettingsScreen(
-                        viewModel = settingsViewModel,
-                        onBack = null,
-                        onOpenEqualizer = { navController.navigate(NovaDestinations.EQUALIZER) },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(
-                    route = NovaDestinations.ALBUM_DETAIL,
-                    arguments = listOf(navArgument("albumId") { type = NavType.LongType })
-                ) { entry ->
-                    val albumId = entry.arguments?.getLong("albumId") ?: 0L
-                    val songs = remember(libraryState.songs, albumId) {
-                        libraryViewModel.songsForAlbum(albumId)
-                    }
-                    val albumName = songs.firstOrNull()?.album ?: "Album"
-                    val artistName = songs.firstOrNull()?.artist ?: ""
-                    CollectionDetailScreen(
-                        title = albumName,
-                        subtitle = artistName,
-                        artworkUri = songs.firstOrNull()?.artworkUri,
-                        songs = songs,
-                        viewModel = libraryViewModel,
-                        onBack = { navController.popBackStack() },
-                        onOpenLyricsForSong = { song -> lyricsTargetSong = song },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(
-                    route = NovaDestinations.ARTIST_DETAIL,
-                    arguments = listOf(navArgument("artistName") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    })
-                ) { entry ->
-                    val artistName = Uri.decode(entry.arguments?.getString("artistName").orEmpty())
-                    val songs = remember(libraryState.songs, artistName) {
-                        libraryViewModel.songsForArtist(artistName)
-                    }
-                    CollectionDetailScreen(
-                        title = artistName,
-                        subtitle = "Artist",
-                        artworkUri = songs.firstOrNull()?.artworkUri,
-                        songs = songs,
-                        viewModel = libraryViewModel,
-                        onBack = { navController.popBackStack() },
-                        onOpenLyricsForSong = { song -> lyricsTargetSong = song },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(
-                    route = NovaDestinations.FOLDER_DETAIL,
-                    arguments = listOf(navArgument("folderPath") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    })
-                ) { entry ->
-                    val folderPath = Uri.decode(entry.arguments?.getString("folderPath").orEmpty())
-                    val songs = remember(libraryState.songs, folderPath) {
-                        libraryViewModel.songsForFolder(folderPath)
-                    }
-                    val folderName = songs.firstOrNull()?.folderName ?: "Folder"
-                    CollectionDetailScreen(
-                        title = folderName,
-                        subtitle = folderPath,
-                        artworkUri = songs.firstOrNull()?.artworkUri,
-                        songs = songs,
-                        viewModel = libraryViewModel,
-                        onBack = { navController.popBackStack() },
-                        onOpenLyricsForSong = { song -> lyricsTargetSong = song },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(
-                    route = NovaDestinations.GENRE_DETAIL,
-                    arguments = listOf(navArgument("genreName") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    })
-                ) { entry ->
-                    val genreName = Uri.decode(entry.arguments?.getString("genreName").orEmpty())
-                    val songs = remember(libraryState.songs, genreName) {
-                        libraryViewModel.songsForGenre(genreName)
-                    }
-                    CollectionDetailScreen(
-                        title = genreName,
-                        subtitle = "Genre",
-                        artworkUri = songs.firstOrNull()?.artworkUri,
-                        songs = songs,
-                        viewModel = libraryViewModel,
-                        onBack = { navController.popBackStack() },
-                        onOpenLyricsForSong = { song -> lyricsTargetSong = song },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(
-                    route = NovaDestinations.PLAYLIST_DETAIL,
-                    arguments = listOf(navArgument("playlistId") { type = NavType.LongType })
-                ) { entry ->
-                    val playlistId = entry.arguments?.getLong("playlistId") ?: 0L
-                    PlaylistDetailScreen(
-                        playlistId = playlistId,
-                        isFavoritesMode = false,
-                        viewModel = playlistsViewModel,
-                        onBack = { navController.popBackStack() },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-
-                composable(NovaDestinations.FAVORITES_DETAIL) {
-                    PlaylistDetailScreen(
-                        playlistId = -1L,
-                        isFavoritesMode = true,
-                        viewModel = playlistsViewModel,
-                        onBack = { navController.popBackStack() },
-                        bottomContentPadding = miniPlayerHeight
-                    )
-                }
-            }
-        }
-
-        // Full-Screen Liquid Glass Now Playing Overlay
-        AnimatedVisibility(
-            visible = showNowPlaying,
-            enter = slideInVertically(
-                animationSpec = tween(340),
-                initialOffsetY = { it }
-            ) + fadeIn(tween(260)),
-            exit = slideOutVertically(
-                animationSpec = tween(280),
-                targetOffsetY = { it }
-            ) + fadeOut(tween(200))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-            ) {
-                NowPlayingScreen(
-                    viewModel = playerViewModel,
-                    onCollapse = { showNowPlaying = false },
-                    onOpenEqualizer = {
-                        showNowPlaying = false
-                        navController.navigate(NovaDestinations.EQUALIZER)
                     },
-                    onOpenLyrics = { song -> lyricsTargetSong = song }
-                )
-            }
-        }
+                    exitTransition = {
+                        if (reducedMotion) {
+                            fadeOut(tween(90))
+                        } else {
+                            fadeOut(tween(180, easing = FastOutSlowInEasing)) +
+                                slideOutHorizontally(
+                                    animationSpec = tween(210, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { -(it * 0.03f).roundToInt() }
+                                ) +
+                                scaleOut(targetScale = 0.985f, animationSpec = tween(200))
+                        }
+                    },
+                    popEnterTransition = {
+                        if (reducedMotion) {
+                            fadeIn(tween(90))
+                        } else {
+                            fadeIn(tween(240, easing = FastOutSlowInEasing)) +
+                                slideInHorizontally(
+                                    animationSpec = spring(dampingRatio = 0.88f, stiffness = 360f),
+                                    initialOffsetX = { -(it * 0.05f).roundToInt() }
+                                ) +
+                                scaleIn(
+                                    initialScale = 0.975f,
+                                    animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMedium)
+                                )
+                        }
+                    },
+                    popExitTransition = {
+                        if (reducedMotion) {
+                            fadeOut(tween(90))
+                        } else {
+                            fadeOut(tween(190, easing = FastOutSlowInEasing)) +
+                                slideOutHorizontally(
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                    targetOffsetX = { (it * 0.05f).roundToInt() }
+                                ) +
+                                scaleOut(targetScale = 0.965f, animationSpec = tween(210))
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = innerPadding.calculateBottomPadding())
+                ) {
+                    composable(NovaDestinations.HOME) {
+                        HomeScreen(
+                            viewModel = homeViewModel,
+                            isEqualizerActive = eqState.isEnabled,
+                            onOpenSearch = { navigateTab(NovaDestinations.SEARCH) },
+                            onOpenEqualizer = { navController.navigate(NovaDestinations.EQUALIZER) },
+                            onOpenSettings = { navigateTab(NovaDestinations.SETTINGS) },
+                            onOpenNowPlaying = { showNowPlaying = true },
+                            onOpenAlbum = { albumId -> navController.navigate(NovaDestinations.albumDetail(albumId)) },
+                            onOpenArtist = { artist -> navController.navigate(NovaDestinations.artistDetail(artist)) },
+                            onOpenPlaylist = { pid -> navController.navigate(NovaDestinations.playlistDetail(pid)) },
+                            onOpenLibrary = { navigateTab(NovaDestinations.LIBRARY) },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
 
-        // Full-Screen Liquid Glass Lyrics Overlay
-        AnimatedVisibility(
-            visible = lyricsTargetSong != null,
-            enter = slideInVertically(
-                animationSpec = tween(320),
-                initialOffsetY = { it }
-            ) + fadeIn(tween(240)),
-            exit = slideOutVertically(
-                animationSpec = tween(260),
-                targetOffsetY = { it }
-            ) + fadeOut(tween(180))
-        ) {
-            lyricsTargetSong?.let { song ->
+                    composable(
+                        route = "library?search={search}",
+                        arguments = listOf(navArgument("search") {
+                            type = NavType.BoolType
+                            defaultValue = false
+                        })
+                    ) { entry ->
+                        val focusSearch = entry.arguments?.getBoolean("search") ?: false
+                        LibraryScreen(
+                            viewModel = libraryViewModel,
+                            initialFocusSearch = focusSearch,
+                            onOpenAlbum = { albumId -> navController.navigate(NovaDestinations.albumDetail(albumId)) },
+                            onOpenArtist = { artist -> navController.navigate(NovaDestinations.artistDetail(artist)) },
+                            onOpenFolder = { path -> navController.navigate(NovaDestinations.folderDetail(path)) },
+                            onOpenGenre = { genre -> navController.navigate(NovaDestinations.genreDetail(genre)) },
+                            onOpenLyricsForSong = { song -> lyricsTargetSong = song },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SEARCH) {
+                        SearchScreen(
+                            viewModel = libraryViewModel,
+                            onOpenAlbum = { albumId -> navController.navigate(NovaDestinations.albumDetail(albumId)) },
+                            onOpenArtist = { artist -> navController.navigate(NovaDestinations.artistDetail(artist)) },
+                            onOpenGenre = { genre -> navController.navigate(NovaDestinations.genreDetail(genre)) },
+                            onOpenLyricsForSong = { song -> lyricsTargetSong = song },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.PLAYLISTS) {
+                        PlaylistsScreen(
+                            viewModel = playlistsViewModel,
+                            onOpenPlaylist = { pid -> navController.navigate(NovaDestinations.playlistDetail(pid)) },
+                            onOpenFavorites = { navController.navigate(NovaDestinations.FAVORITES_DETAIL) },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.EQUALIZER) {
+                        EqualizerScreen(
+                            viewModel = equalizerViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS) {
+                        SettingsScreen(
+                            viewModel = settingsViewModel,
+                            onBack = null,
+                            onOpenEqualizer = { navController.navigate(NovaDestinations.EQUALIZER) },
+                            onOpenAbout = { navController.navigate(NovaDestinations.ABOUT) },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.ABOUT) {
+                        AboutScreen(
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(
+                        route = NovaDestinations.ALBUM_DETAIL,
+                        arguments = listOf(navArgument("albumId") { type = NavType.LongType })
+                    ) { entry ->
+                        val albumId = entry.arguments?.getLong("albumId") ?: 0L
+                        val songs = remember(libraryState.songs, albumId) {
+                            libraryViewModel.songsForAlbum(albumId)
+                        }
+                        val albumName = songs.firstOrNull()?.album ?: "Album"
+                        val artistName = songs.firstOrNull()?.artist ?: ""
+                        CollectionDetailScreen(
+                            title = albumName,
+                            subtitle = artistName,
+                            artworkUri = songs.firstOrNull()?.artworkUri,
+                            songs = songs,
+                            viewModel = libraryViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenLyricsForSong = { song -> lyricsTargetSong = song },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(
+                        route = NovaDestinations.ARTIST_DETAIL,
+                        arguments = listOf(navArgument("artistName") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        })
+                    ) { entry ->
+                        val artistName = Uri.decode(entry.arguments?.getString("artistName").orEmpty())
+                        val songs = remember(libraryState.songs, artistName) {
+                            libraryViewModel.songsForArtist(artistName)
+                        }
+                        CollectionDetailScreen(
+                            title = artistName,
+                            subtitle = "Artist",
+                            artworkUri = songs.firstOrNull()?.artworkUri,
+                            songs = songs,
+                            viewModel = libraryViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenLyricsForSong = { song -> lyricsTargetSong = song },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(
+                        route = NovaDestinations.FOLDER_DETAIL,
+                        arguments = listOf(navArgument("folderPath") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        })
+                    ) { entry ->
+                        val folderPath = Uri.decode(entry.arguments?.getString("folderPath").orEmpty())
+                        val songs = remember(libraryState.songs, folderPath) {
+                            libraryViewModel.songsForFolder(folderPath)
+                        }
+                        val folderName = songs.firstOrNull()?.folderName ?: "Folder"
+                        CollectionDetailScreen(
+                            title = folderName,
+                            subtitle = folderPath,
+                            artworkUri = songs.firstOrNull()?.artworkUri,
+                            songs = songs,
+                            viewModel = libraryViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenLyricsForSong = { song -> lyricsTargetSong = song },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(
+                        route = NovaDestinations.GENRE_DETAIL,
+                        arguments = listOf(navArgument("genreName") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        })
+                    ) { entry ->
+                        val genreName = Uri.decode(entry.arguments?.getString("genreName").orEmpty())
+                        val songs = remember(libraryState.songs, genreName) {
+                            libraryViewModel.songsForGenre(genreName)
+                        }
+                        CollectionDetailScreen(
+                            title = genreName,
+                            subtitle = "Genre",
+                            artworkUri = songs.firstOrNull()?.artworkUri,
+                            songs = songs,
+                            viewModel = libraryViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenLyricsForSong = { song -> lyricsTargetSong = song },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(
+                        route = NovaDestinations.PLAYLIST_DETAIL,
+                        arguments = listOf(navArgument("playlistId") { type = NavType.LongType })
+                    ) { entry ->
+                        val playlistId = entry.arguments?.getLong("playlistId") ?: 0L
+                        PlaylistDetailScreen(
+                            playlistId = playlistId,
+                            isFavoritesMode = false,
+                            viewModel = playlistsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.FAVORITES_DETAIL) {
+                        PlaylistDetailScreen(
+                            playlistId = -1L,
+                            isFavoritesMode = true,
+                            viewModel = playlistsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+                }
+            }
+
+            // Full-Screen Fluid Spring Liquid Glass Now Playing Sheet Overlay
+            AnimatedVisibility(
+                visible = showNowPlaying,
+                enter = if (reducedMotion) {
+                    fadeIn(tween(110))
+                } else {
+                    slideInVertically(
+                        animationSpec = spring<IntOffset>(
+                            dampingRatio = 0.84f,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        initialOffsetY = { it }
+                    ) + scaleIn(
+                        initialScale = 0.96f,
+                        animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)
+                    ) + fadeIn(tween(240))
+                },
+                exit = if (reducedMotion) {
+                    fadeOut(tween(100))
+                } else {
+                    slideOutVertically(
+                        animationSpec = spring<IntOffset>(
+                            dampingRatio = 0.90f,
+                            stiffness = Spring.StiffnessMedium
+                        ),
+                        targetOffsetY = { it }
+                    ) + fadeOut(tween(200))
+                }
+            ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .statusBarsPadding()
                         .navigationBarsPadding()
                 ) {
-                    LyricsScreen(
-                        song = song,
+                    NowPlayingScreen(
                         viewModel = playerViewModel,
-                        onBack = { lyricsTargetSong = null }
+                        onCollapse = { showNowPlaying = false },
+                        onOpenEqualizer = {
+                            showNowPlaying = false
+                            navController.navigate(NovaDestinations.EQUALIZER)
+                        },
+                        onOpenLyrics = { song -> lyricsTargetSong = song }
                     )
+                }
+            }
+
+            // Full-Screen Liquid Glass Lyrics Overlay
+            AnimatedVisibility(
+                visible = lyricsTargetSong != null,
+                enter = if (reducedMotion) {
+                    fadeIn(tween(110))
+                } else {
+                    slideInVertically(
+                        animationSpec = spring<IntOffset>(
+                            dampingRatio = 0.84f,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        initialOffsetY = { it }
+                    ) + fadeIn(tween(240))
+                },
+                exit = if (reducedMotion) {
+                    fadeOut(tween(100))
+                } else {
+                    slideOutVertically(
+                        animationSpec = spring<IntOffset>(
+                            dampingRatio = 0.90f,
+                            stiffness = Spring.StiffnessMedium
+                        ),
+                        targetOffsetY = { it }
+                    ) + fadeOut(tween(190))
+                }
+            ) {
+                lyricsTargetSong?.let { song ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .navigationBarsPadding()
+                    ) {
+                        LyricsScreen(
+                            song = song,
+                            viewModel = playerViewModel,
+                            onBack = { lyricsTargetSong = null }
+                        )
+                    }
                 }
             }
         }

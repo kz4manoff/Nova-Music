@@ -51,7 +51,7 @@ import com.novamusic.player.navigation.NovaMainAppShell
 import com.novamusic.player.permissions.PermissionHelper
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassButton
-import com.novamusic.player.ui.components.LiquidGlassCard
+import com.novamusic.player.ui.components.LiquidGlassSurface
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.ui.theme.NovaMusicTheme
 import kotlinx.coroutines.launch
@@ -189,8 +189,8 @@ private fun PermissionGateScreen(
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
-            LiquidGlassCard(
-                shape = RoundedCornerShape(30.dp),
+            LiquidGlassSurface(
+                shape = RoundedCornerShape(32.dp),
                 elevation = 24.dp,
                 contentPadding = PaddingValues(28.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -203,7 +203,7 @@ private fun PermissionGateScreen(
                     Box(
                         modifier = Modifier
                             .size(92.dp)
-                            .shadow(16.dp, CircleShape, ambientColor = accent, spotColor = accent)
+                            .shadow(18.dp, CircleShape, ambientColor = accent, spotColor = accent)
                             .clip(CircleShape)
                             .background(
                                 Brush.radialGradient(
@@ -214,11 +214,11 @@ private fun PermissionGateScreen(
                                 )
                             )
                             .border(
-                                width = 1.4.dp,
+                                width = 1.dp,
                                 brush = Brush.verticalGradient(
                                     colors = listOf(
                                         Color.White.copy(alpha = 0.55f),
-                                        accent.copy(alpha = 0.35f)
+                                        accent.copy(alpha = 0.28f)
                                     )
                                 ),
                                 shape = CircleShape
@@ -255,7 +255,7 @@ private fun PermissionGateScreen(
                     LiquidGlassButton(
                         onClick = onRequestPermission,
                         highlighted = true,
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(20.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
@@ -270,7 +270,7 @@ private fun PermissionGateScreen(
                     LiquidGlassButton(
                         onClick = onOpenSystemSettings,
                         highlighted = false,
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(20.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp)

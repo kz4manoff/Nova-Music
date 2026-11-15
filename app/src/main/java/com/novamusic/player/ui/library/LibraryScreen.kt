@@ -4,17 +4,31 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,7 +40,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,11 +74,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -80,18 +95,22 @@ import com.novamusic.player.data.model.Song
 import com.novamusic.player.data.model.SortDirection
 import com.novamusic.player.data.model.SortOrder
 import com.novamusic.player.ui.components.AddToPlaylistDialog
+import com.novamusic.player.ui.components.LiquidGlassArtwork
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassButton
-import com.novamusic.player.ui.components.LiquidGlassCard
 import com.novamusic.player.ui.components.LiquidGlassIconButton
 import com.novamusic.player.ui.components.LiquidGlassSearchBar
-import com.novamusic.player.ui.components.NovaAlbumArtwork
+import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.LiquidGlassTopBar
+import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.SongListItem
 import com.novamusic.player.ui.components.SongOptionsBottomSheet
 import com.novamusic.player.ui.components.TrackInfoDialog
+import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaGold
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
+import kotlin.math.abs
 
 @Composable
 fun LibraryScreen(
@@ -140,31 +159,11 @@ fun LibraryScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Floating Liquid Glass Header
-        LiquidGlassCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 10.dp),
-            shape = RoundedCornerShape(24.dp),
-            elevation = 12.dp,
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Music Library",
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    Text(
-                        text = "${state.songs.size} tracks • ${state.albums.size} albums",
-                        style = NovaMonoTelemetry.copy(fontWeight = FontWeight.Normal),
-                        color = accent
-                    )
-                }
-
+        // Floating iOS Liquid Glass Top Bar
+        LiquidGlassTopBar(
+            title = "Library",
+            subtitle = "${state.songs.size} tracks • ${state.albums.size} albums",
+            trailingActions = {
                 LiquidGlassIconButton(
                     icon = Icons.Rounded.Search,
                     contentDescription = "Search",
@@ -173,8 +172,6 @@ fun LibraryScreen(
                     iconSize = 19.dp,
                     onClick = { showSearchBar = !showSearchBar }
                 )
-
-                Spacer(modifier = Modifier.width(8.dp))
 
                 Box {
                     LiquidGlassIconButton(
@@ -220,14 +217,12 @@ fun LibraryScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
-
                 if (state.isScanning) {
                     Box(
                         modifier = Modifier.size(38.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = accent)
+                        CircularProgressIndicator(modifier = Modifier.size(19.dp), strokeWidth = 2.dp, color = accent)
                     }
                 } else {
                     LiquidGlassIconButton(
@@ -239,102 +234,96 @@ fun LibraryScreen(
                     )
                 }
             }
-        }
+        )
 
         AnimatedVisibility(visible = showSearchBar || state.searchQuery.isNotEmpty()) {
             LiquidGlassSearchBar(
                 query = state.searchQuery,
                 onQueryChange = viewModel::updateSearchQuery,
-                placeholder = "Search songs, artists, albums, folders...",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                placeholder = "Filter library...",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
 
-        // Floating Glass Category Pill Rail
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            LibraryTab.entries.forEach { tab ->
-                val isSelected = selectedTab == tab
-                LiquidGlassCard(
-                    shape = RoundedCornerShape(16.dp),
-                    highlighted = isSelected,
-                    elevation = if (isSelected) 10.dp else 4.dp,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 9.dp),
-                    onClick = { selectedTab = tab }
-                ) {
-                    Text(
-                        text = tab.label,
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                        ),
-                        color = if (isSelected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+        // Spring-Sliding iOS Optical Glass Segment Control
+        LibrarySlidingSegmentBar(
+            selectedTab = selectedTab,
+            onSelectTab = { selectedTab = it },
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        val reducedMotion = LocalReducedMotion.current
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = {
+                if (reducedMotion) {
+                    fadeIn(tween(80)) togetherWith fadeOut(tween(80))
+                } else {
+                    (fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                        scaleIn(initialScale = 0.98f, animationSpec = tween(220))) togetherWith
+                        (fadeOut(tween(150)) + scaleOut(targetScale = 0.99f, animationSpec = tween(150)))
+                }
+            },
+            label = "library_tab_content"
+        ) { activeTab ->
+            when (activeTab) {
+                LibraryTab.SONGS -> {
+                    SongsListContent(
+                        songs = state.songs,
+                        currentSongId = playerState.currentSong?.id,
+                        isPlaying = playerState.isPlaying,
+                        favoriteIds = state.favoriteIds,
+                        highResArtwork = state.highResArtwork,
+                        bottomPadding = bottomContentPadding,
+                        onPlayAll = { viewModel.playAll(state.songs, shuffle = false) },
+                        onShuffleAll = { viewModel.playAll(state.songs, shuffle = true) },
+                        onSongClick = { song -> viewModel.playSong(song, state.songs) },
+                        onFavoriteClick = viewModel::toggleFavorite,
+                        onMoreClick = { optionsSong = it }
                     )
                 }
-            }
-        }
-
-        when (selectedTab) {
-            LibraryTab.SONGS -> {
-                SongsListContent(
-                    songs = state.songs,
-                    currentSongId = playerState.currentSong?.id,
-                    isPlaying = playerState.isPlaying,
-                    favoriteIds = state.favoriteIds,
-                    highResArtwork = state.highResArtwork,
-                    bottomPadding = bottomContentPadding,
-                    onPlayAll = { viewModel.playAll(state.songs, shuffle = false) },
-                    onShuffleAll = { viewModel.playAll(state.songs, shuffle = true) },
-                    onSongClick = { song -> viewModel.playSong(song, state.songs) },
-                    onFavoriteClick = viewModel::toggleFavorite,
-                    onMoreClick = { optionsSong = it }
-                )
-            }
-            LibraryTab.ALBUMS -> {
-                AlbumsGridContent(
-                    albums = state.albums,
-                    highResArtwork = state.highResArtwork,
-                    bottomPadding = bottomContentPadding,
-                    onAlbumClick = { onOpenAlbum(it.id) }
-                )
-            }
-            LibraryTab.ARTISTS -> {
-                ArtistsListContent(
-                    artists = state.artists,
-                    highResArtwork = state.highResArtwork,
-                    bottomPadding = bottomContentPadding,
-                    onArtistClick = { onOpenArtist(it.name) }
-                )
-            }
-            LibraryTab.FOLDERS -> {
-                FoldersManagerContent(
-                    folders = state.folders,
-                    safSongs = state.safPickedSongs,
-                    safFolderName = state.safFolderName,
-                    currentSongId = playerState.currentSong?.id,
-                    isPlaying = playerState.isPlaying,
-                    favoriteIds = state.favoriteIds,
-                    bottomPadding = bottomContentPadding,
-                    onFolderClick = { onOpenFolder(it.path) },
-                    onToggleFavoriteFolder = viewModel::toggleFavoriteFolder,
-                    onPickSafFolder = { safTreeLauncher.launch(null) },
-                    onPickSafAudioFile = { safFileLauncher.launch(arrayOf("audio/*")) },
-                    onClearSafFolder = viewModel::clearSafFolder,
-                    onPlaySafSong = { song -> viewModel.playSong(song, state.safPickedSongs) },
-                    onFavoriteSong = viewModel::toggleFavorite,
-                    onMoreSong = { optionsSong = it }
-                )
-            }
-            LibraryTab.GENRES -> {
-                GenresListContent(
-                    genres = state.genres,
-                    bottomPadding = bottomContentPadding,
-                    onGenreClick = { onOpenGenre(it.name) }
-                )
+                LibraryTab.ALBUMS -> {
+                    AlbumsGridContent(
+                        albums = state.albums,
+                        highResArtwork = state.highResArtwork,
+                        bottomPadding = bottomContentPadding,
+                        onAlbumClick = { onOpenAlbum(it.id) }
+                    )
+                }
+                LibraryTab.ARTISTS -> {
+                    ArtistsListContent(
+                        artists = state.artists,
+                        highResArtwork = state.highResArtwork,
+                        bottomPadding = bottomContentPadding,
+                        onArtistClick = { onOpenArtist(it.name) }
+                    )
+                }
+                LibraryTab.FOLDERS -> {
+                    FoldersManagerContent(
+                        folders = state.folders,
+                        safSongs = state.safPickedSongs,
+                        safFolderName = state.safFolderName,
+                        currentSongId = playerState.currentSong?.id,
+                        isPlaying = playerState.isPlaying,
+                        favoriteIds = state.favoriteIds,
+                        bottomPadding = bottomContentPadding,
+                        onFolderClick = { onOpenFolder(it.path) },
+                        onToggleFavoriteFolder = viewModel::toggleFavoriteFolder,
+                        onPickSafFolder = { safTreeLauncher.launch(null) },
+                        onPickSafAudioFile = { safFileLauncher.launch(arrayOf("audio/*")) },
+                        onClearSafFolder = viewModel::clearSafFolder,
+                        onPlaySafSong = { song -> viewModel.playSong(song, state.safPickedSongs) },
+                        onFavoriteSong = viewModel::toggleFavorite,
+                        onMoreSong = { optionsSong = it }
+                    )
+                }
+                LibraryTab.GENRES -> {
+                    GenresListContent(
+                        genres = state.genres,
+                        bottomPadding = bottomContentPadding,
+                        onGenreClick = { onOpenGenre(it.name) }
+                    )
+                }
             }
         }
     }
@@ -372,6 +361,104 @@ fun LibraryScreen(
 }
 
 @Composable
+private fun LibrarySlidingSegmentBar(
+    selectedTab: LibraryTab,
+    onSelectTab: (LibraryTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tabs = LibraryTab.entries
+    val selectedIdx = tabs.indexOf(selectedTab).coerceAtLeast(0)
+    val palette = LocalArtworkPalette.current
+    val novaColors = LocalNovaColors.current
+    val isLight = novaColors.isLight
+    val accent = MaterialTheme.colorScheme.primary
+    val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+
+    LiquidGlassSurface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        elevation = 10.dp
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(4.dp)
+        ) {
+            val segWidth = maxWidth / tabs.size
+            val segWidthPx = with(density) { segWidth.toPx() }.coerceAtLeast(1f)
+            val targetX = segWidthPx * selectedIdx
+            val pillX by animateFloatAsState(
+                targetValue = targetX,
+                animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.74f, stiffness = 380f),
+                label = "lib_seg_slide_px"
+            )
+            val travel = if (reducedMotion) 0f else (abs(targetX - pillX) / segWidthPx).coerceIn(0f, 1.3f)
+
+            Box(
+                modifier = Modifier
+                    .width(segWidth)
+                    .fillMaxHeight()
+                    .graphicsLayer {
+                        translationX = pillX
+                        scaleX = 1f + travel * 0.12f
+                        scaleY = 1f - travel * 0.04f
+                    }
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = if (isLight) {
+                                listOf(Color.White.copy(alpha = 0.95f), lerp(Color.White, palette.primary, 0.14f))
+                            } else {
+                                listOf(lerp(Color.White, palette.glow, 0.2f).copy(alpha = 0.24f), palette.primary.copy(alpha = 0.10f))
+                            }
+                        )
+                    )
+                    .border(
+                        width = 0.75.dp,
+                        color = Color.White.copy(alpha = if (isLight) 0.9f else 0.36f),
+                        shape = RoundedCornerShape(18.dp)
+                    )
+            )
+
+            Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                tabs.forEach { tab ->
+                    val selected = tab == selectedTab
+                    val tint by animateColorAsState(
+                        targetValue = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                        animationSpec = if (reducedMotion) snap() else tween(200),
+                        label = "lib_seg_tint_${tab.name}"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { onSelectTab(tab) }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = tab.label,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontSize = 11.5.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                            ),
+                            color = tint,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SongsListContent(
     songs: List<Song>,
     currentSongId: Long?,
@@ -391,7 +478,7 @@ private fun SongsListContent(
             start = 10.dp,
             end = 10.dp,
             top = 4.dp,
-            bottom = bottomPadding + 20.dp
+            bottom = bottomPadding + 24.dp
         )
     ) {
         if (songs.isNotEmpty()) {
@@ -406,7 +493,7 @@ private fun SongsListContent(
                     LiquidGlassButton(
                         onClick = onPlayAll,
                         highlighted = true,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -426,7 +513,7 @@ private fun SongsListContent(
                     }
                     LiquidGlassButton(
                         onClick = onShuffleAll,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -484,44 +571,31 @@ private fun AlbumsGridContent(
         contentPadding = PaddingValues(
             start = 16.dp,
             end = 16.dp,
-            top = 6.dp,
-            bottom = bottomPadding + 20.dp
+            top = 8.dp,
+            bottom = bottomPadding + 24.dp
         ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         items(albums, key = { it.id }) { album ->
-            LiquidGlassCard(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(210.dp),
-                shape = RoundedCornerShape(24.dp),
-                elevation = 14.dp,
-                contentPadding = PaddingValues(6.dp),
-                onClick = { onAlbumClick(album) }
+                    .clickable { onAlbumClick(album) }
             ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    NovaAlbumArtwork(
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(172.dp)
+                ) {
+                    LiquidGlassArtwork(
                         artworkUri = album.artworkUri,
                         contentDescription = album.name,
                         modifier = Modifier.fillMaxSize(),
-                        cornerRadius = 18.dp,
+                        shape = RoundedCornerShape(24.dp),
+                        shadowElevation = 20.dp,
                         highRes = highResArtwork,
                         fallbackIcon = Icons.Rounded.Album
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.22f),
-                                        Color.Black.copy(alpha = 0.9f)
-                                    )
-                                )
-                            )
                     )
                     if (album.year > 0) {
                         Box(
@@ -529,38 +603,32 @@ private fun AlbumsGridContent(
                                 .align(Alignment.TopEnd)
                                 .padding(9.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Black.copy(alpha = 0.65f))
-                                .border(0.7.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.56f))
                                 .padding(horizontal = 7.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = album.year.toString(),
                                 style = NovaMonoTelemetry.copy(fontSize = 10.sp),
-                                color = MaterialTheme.colorScheme.primary
+                                color = Color.White
                             )
                         }
                     }
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(11.dp)
-                    ) {
-                        Text(
-                            text = album.name,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${album.artist} • ${album.songCount} tracks",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.8f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = album.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${album.artist} • ${album.songCount} tracks",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -578,12 +646,12 @@ private fun ArtistsListContent(
             start = 16.dp,
             end = 16.dp,
             top = 6.dp,
-            bottom = bottomPadding + 20.dp
+            bottom = bottomPadding + 24.dp
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         items(artists, key = { "${it.id}_${it.name}" }) { artist ->
-            LiquidGlassCard(
+            LiquidGlassSurface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
                 elevation = 8.dp,
@@ -594,38 +662,20 @@ private fun ArtistsListContent(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(58.dp)
-                            .clip(CircleShape)
-                            .border(
-                                width = 1.4.dp,
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        Color.White.copy(alpha = 0.35f)
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
-                            .padding(2.dp)
-                    ) {
-                        NovaAlbumArtwork(
-                            artworkUri = artist.artworkUri,
-                            contentDescription = artist.name,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape),
-                            cornerRadius = 28.dp,
-                            highRes = highResArtwork,
-                            fallbackIcon = Icons.Rounded.Person
-                        )
-                    }
+                    LiquidGlassArtwork(
+                        artworkUri = artist.artworkUri,
+                        contentDescription = artist.name,
+                        modifier = Modifier.size(56.dp),
+                        shape = CircleShape,
+                        shadowElevation = 12.dp,
+                        highRes = highResArtwork,
+                        fallbackIcon = Icons.Rounded.Person
+                    )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = artist.name,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -666,7 +716,7 @@ private fun FoldersManagerContent(
             start = 16.dp,
             end = 16.dp,
             top = 6.dp,
-            bottom = bottomPadding + 20.dp
+            bottom = bottomPadding + 24.dp
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -713,7 +763,7 @@ private fun FoldersManagerContent(
 
         if (safSongs.isNotEmpty()) {
             item {
-                LiquidGlassCard(
+                LiquidGlassSurface(
                     shape = RoundedCornerShape(18.dp),
                     highlighted = true,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
@@ -749,7 +799,7 @@ private fun FoldersManagerContent(
         }
 
         items(folders, key = { it.path }) { folder ->
-            LiquidGlassCard(
+            LiquidGlassSurface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 highlighted = folder.isFavorite,
@@ -764,7 +814,7 @@ private fun FoldersManagerContent(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(46.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .background(accent.copy(alpha = 0.16f)),
                         contentAlignment = Alignment.Center
@@ -817,12 +867,12 @@ private fun GenresListContent(
             start = 16.dp,
             end = 16.dp,
             top = 6.dp,
-            bottom = bottomPadding + 20.dp
+            bottom = bottomPadding + 24.dp
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         items(genres, key = { it.name }) { genre ->
-            LiquidGlassCard(
+            LiquidGlassSurface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 elevation = 8.dp,
@@ -885,53 +935,53 @@ fun CollectionDetailScreen(
             LiquidGlassBackdrop(
                 artworkUri = artworkUri,
                 isPlaying = playerState.isPlaying,
-                intensity = 1.0f
+                intensity = 1.1f
             )
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            LiquidGlassCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                shape = RoundedCornerShape(26.dp),
-                elevation = 14.dp,
-                contentPadding = PaddingValues(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            LiquidGlassTopBar(
+                title = title,
+                subtitle = "$subtitle • ${songs.size} tracks",
+                leadingAction = {
                     LiquidGlassIconButton(
                         icon = Icons.AutoMirrored.Rounded.ArrowBack,
                         contentDescription = "Back",
-                        size = 38.dp,
-                        iconSize = 19.dp,
+                        size = 40.dp,
+                        iconSize = 20.dp,
                         onClick = onBack
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    if (artworkUri != null) {
-                        NovaAlbumArtwork(
-                            artworkUri = artworkUri,
-                            contentDescription = title,
-                            modifier = Modifier
-                                .size(62.dp)
-                                .shadow(12.dp, RoundedCornerShape(16.dp)),
-                            cornerRadius = 16.dp,
-                            highRes = state.highResArtwork
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                    }
+                }
+            )
+
+            if (artworkUri != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LiquidGlassArtwork(
+                        artworkUri = artworkUri,
+                        contentDescription = title,
+                        modifier = Modifier.size(96.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        shadowElevation = 22.dp,
+                        highRes = state.highResArtwork
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            maxLines = 1,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$subtitle • ${songs.size} tracks",
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
