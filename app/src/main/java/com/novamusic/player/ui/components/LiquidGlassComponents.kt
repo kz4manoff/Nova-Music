@@ -1319,7 +1319,7 @@ fun LiquidGlassMiniPlayer(
                                     shape = RoundedCornerShape(13.dp),
                                     shadowElevation = 10.dp
                                 )
-                                AnimatedVisibility(
+                                androidx.compose.animation.AnimatedVisibility(
                                     visible = playerState.isPlaying,
                                     enter = fadeIn(tween(180)),
                                     exit = fadeOut(tween(160))
