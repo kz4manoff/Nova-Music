@@ -9,10 +9,17 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.novamusic.player.data.model.AccentColorOption
 import com.novamusic.player.data.model.ArtworkStyle
+import com.novamusic.player.data.model.AudioFocusBehavior
+import com.novamusic.player.data.model.AudioQualityMode
+import com.novamusic.player.data.model.NavBarAppearance
+import com.novamusic.player.data.model.NotificationAppearance
+import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.RepeatModeOption
+import com.novamusic.player.data.model.RescanInterval
 import com.novamusic.player.data.model.SortDirection
 import com.novamusic.player.data.model.SortOrder
 import com.novamusic.player.data.model.ThemeMode
@@ -23,14 +30,39 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "nova_preferences")
 
 data class AppSettings(
-    val themeMode: ThemeMode = ThemeMode.AMOLED,
-    val accentColor: AccentColorOption = AccentColorOption.ELECTRIC_ORANGE,
+    // General
     val languageTag: String = "",
+    val themeMode: ThemeMode = ThemeMode.AMOLED,
+    val dynamicColors: Boolean = true,
+    val hapticFeedback: Boolean = true,
+    val keepScreenOn: Boolean = false,
+    // Appearance
+    val accentColor: AccentColorOption = AccentColorOption.ELECTRIC_ORANGE,
     val artworkStyle: ArtworkStyle = ArtworkStyle.ROUNDED_CARD,
+    val blurIntensity: Float = 1.0f,
+    val playerAnimationStyle: PlayerAnimationStyle = PlayerAnimationStyle.FLUID,
+    val navBarAppearance: NavBarAppearance = NavBarAppearance.FLOATING_GLASS,
+    val interfaceAnimations: Boolean = true,
+    // Playback
+    val audioQuality: AudioQualityMode = AudioQualityMode.HIGH_RES,
     val gaplessPlayback: Boolean = true,
+    val crossfadeSeconds: Int = 0,
+    val replayGainEnabled: Boolean = false,
     val resumePlaybackOnStart: Boolean = true,
+    val autoplayEnabled: Boolean = true,
+    val audioFocusBehavior: AudioFocusBehavior = AudioFocusBehavior.PAUSE_ON_LOSS,
+    // Library & Storage
     val minTrackDurationSec: Int = 10,
+    val rescanInterval: RescanInterval = RescanInterval.ON_START,
+    val excludedFolders: Set<String> = emptySet(),
     val highResArtwork: Boolean = true,
+    val lastScanTimestampMs: Long = 0L,
+    // Notifications
+    val notificationsEnabled: Boolean = true,
+    val lockScreenControls: Boolean = true,
+    val showNotificationArtwork: Boolean = true,
+    val notificationAppearance: NotificationAppearance = NotificationAppearance.ARTWORK_GLOW,
+    // Library Sorting
     val sortOrder: SortOrder = SortOrder.NAME,
     val sortDirection: SortDirection = SortDirection.ASCENDING
 )
@@ -59,11 +91,35 @@ class PreferencesRepository(private val context: Context) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val LANGUAGE_TAG = stringPreferencesKey("language_tag")
+        val DYNAMIC_COLORS = booleanPreferencesKey("dynamic_colors")
+        val HAPTIC_FEEDBACK = booleanPreferencesKey("haptic_feedback")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+
         val ARTWORK_STYLE = stringPreferencesKey("artwork_style")
+        val BLUR_INTENSITY = floatPreferencesKey("blur_intensity")
+        val PLAYER_ANIM_STYLE = stringPreferencesKey("player_anim_style")
+        val NAV_BAR_APPEARANCE = stringPreferencesKey("nav_bar_appearance")
+        val INTERFACE_ANIMATIONS = booleanPreferencesKey("interface_animations")
+
+        val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
         val GAPLESS_PLAYBACK = booleanPreferencesKey("gapless_playback")
+        val CROSSFADE_SECONDS = intPreferencesKey("crossfade_seconds")
+        val REPLAY_GAIN = booleanPreferencesKey("replay_gain")
         val RESUME_PLAYBACK = booleanPreferencesKey("resume_playback")
+        val AUTOPLAY_ENABLED = booleanPreferencesKey("autoplay_enabled")
+        val AUDIO_FOCUS_BEHAVIOR = stringPreferencesKey("audio_focus_behavior")
+
         val MIN_DURATION_SEC = intPreferencesKey("min_duration_sec")
+        val RESCAN_INTERVAL = stringPreferencesKey("rescan_interval")
+        val EXCLUDED_FOLDERS = stringSetPreferencesKey("excluded_folders")
         val HIGH_RES_ARTWORK = booleanPreferencesKey("high_res_artwork")
+        val LAST_SCAN_TIMESTAMP_MS = longPreferencesKey("last_scan_timestamp_ms")
+
+        val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
+        val LOCK_SCREEN_CONTROLS = booleanPreferencesKey("lock_screen_controls")
+        val SHOW_NOTIFICATION_ARTWORK = booleanPreferencesKey("show_notification_artwork")
+        val NOTIFICATION_APPEARANCE = stringPreferencesKey("notification_appearance")
+
         val SORT_ORDER = stringPreferencesKey("sort_order")
         val SORT_DIRECTION = stringPreferencesKey("sort_direction")
 
@@ -84,17 +140,48 @@ class PreferencesRepository(private val context: Context) {
 
     val appSettings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
+            languageTag = prefs[Keys.LANGUAGE_TAG] ?: "",
             themeMode = prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.AMOLED,
+            dynamicColors = prefs[Keys.DYNAMIC_COLORS] ?: true,
+            hapticFeedback = prefs[Keys.HAPTIC_FEEDBACK] ?: true,
+            keepScreenOn = prefs[Keys.KEEP_SCREEN_ON] ?: false,
             accentColor = prefs[Keys.ACCENT_COLOR]?.let { runCatching { AccentColorOption.valueOf(it) }.getOrNull() }
                 ?: AccentColorOption.ELECTRIC_ORANGE,
-            languageTag = prefs[Keys.LANGUAGE_TAG] ?: "",
             artworkStyle = prefs[Keys.ARTWORK_STYLE]?.let { runCatching { ArtworkStyle.valueOf(it) }.getOrNull() }
                 ?: ArtworkStyle.ROUNDED_CARD,
+            blurIntensity = (prefs[Keys.BLUR_INTENSITY] ?: 1.0f).coerceIn(0.25f, 1.5f),
+            playerAnimationStyle = prefs[Keys.PLAYER_ANIM_STYLE]?.let {
+                runCatching { PlayerAnimationStyle.valueOf(it) }.getOrNull()
+            } ?: PlayerAnimationStyle.FLUID,
+            navBarAppearance = prefs[Keys.NAV_BAR_APPEARANCE]?.let {
+                runCatching { NavBarAppearance.valueOf(it) }.getOrNull()
+            } ?: NavBarAppearance.FLOATING_GLASS,
+            interfaceAnimations = prefs[Keys.INTERFACE_ANIMATIONS] ?: true,
+            audioQuality = prefs[Keys.AUDIO_QUALITY]?.let {
+                runCatching { AudioQualityMode.valueOf(it) }.getOrNull()
+            } ?: AudioQualityMode.HIGH_RES,
             gaplessPlayback = prefs[Keys.GAPLESS_PLAYBACK] ?: true,
+            crossfadeSeconds = (prefs[Keys.CROSSFADE_SECONDS] ?: 0).coerceIn(0, 10),
+            replayGainEnabled = prefs[Keys.REPLAY_GAIN] ?: false,
             resumePlaybackOnStart = prefs[Keys.RESUME_PLAYBACK] ?: true,
+            autoplayEnabled = prefs[Keys.AUTOPLAY_ENABLED] ?: true,
+            audioFocusBehavior = prefs[Keys.AUDIO_FOCUS_BEHAVIOR]?.let {
+                runCatching { AudioFocusBehavior.valueOf(it) }.getOrNull()
+            } ?: AudioFocusBehavior.PAUSE_ON_LOSS,
             minTrackDurationSec = prefs[Keys.MIN_DURATION_SEC] ?: 10,
+            rescanInterval = prefs[Keys.RESCAN_INTERVAL]?.let {
+                runCatching { RescanInterval.valueOf(it) }.getOrNull()
+            } ?: RescanInterval.ON_START,
+            excludedFolders = prefs[Keys.EXCLUDED_FOLDERS] ?: emptySet(),
             highResArtwork = prefs[Keys.HIGH_RES_ARTWORK] ?: true,
+            lastScanTimestampMs = prefs[Keys.LAST_SCAN_TIMESTAMP_MS] ?: 0L,
+            notificationsEnabled = prefs[Keys.NOTIFICATIONS_ENABLED] ?: true,
+            lockScreenControls = prefs[Keys.LOCK_SCREEN_CONTROLS] ?: true,
+            showNotificationArtwork = prefs[Keys.SHOW_NOTIFICATION_ARTWORK] ?: true,
+            notificationAppearance = prefs[Keys.NOTIFICATION_APPEARANCE]?.let {
+                runCatching { NotificationAppearance.valueOf(it) }.getOrNull()
+            } ?: NotificationAppearance.ARTWORK_GLOW,
             sortOrder = prefs[Keys.SORT_ORDER]?.let { runCatching { SortOrder.valueOf(it) }.getOrNull() }
                 ?: SortOrder.NAME,
             sortDirection = prefs[Keys.SORT_DIRECTION]?.let { runCatching { SortDirection.valueOf(it) }.getOrNull() }
@@ -155,24 +242,110 @@ class PreferencesRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.LANGUAGE_TAG] = tag }
     }
 
+    suspend fun setDynamicColors(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.DYNAMIC_COLORS] = enabled }
+    }
+
+    suspend fun setHapticFeedback(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.HAPTIC_FEEDBACK] = enabled }
+    }
+
+    suspend fun setKeepScreenOn(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.KEEP_SCREEN_ON] = enabled }
+    }
+
     suspend fun setArtworkStyle(style: ArtworkStyle) {
         context.dataStore.edit { it[Keys.ARTWORK_STYLE] = style.name }
+    }
+
+    suspend fun setBlurIntensity(intensity: Float) {
+        context.dataStore.edit { it[Keys.BLUR_INTENSITY] = intensity.coerceIn(0.25f, 1.5f) }
+    }
+
+    suspend fun setPlayerAnimationStyle(style: PlayerAnimationStyle) {
+        context.dataStore.edit { it[Keys.PLAYER_ANIM_STYLE] = style.name }
+    }
+
+    suspend fun setNavBarAppearance(appearance: NavBarAppearance) {
+        context.dataStore.edit { it[Keys.NAV_BAR_APPEARANCE] = appearance.name }
+    }
+
+    suspend fun setInterfaceAnimations(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.INTERFACE_ANIMATIONS] = enabled }
+    }
+
+    suspend fun setAudioQuality(quality: AudioQualityMode) {
+        context.dataStore.edit { it[Keys.AUDIO_QUALITY] = quality.name }
     }
 
     suspend fun setGaplessPlayback(enabled: Boolean) {
         context.dataStore.edit { it[Keys.GAPLESS_PLAYBACK] = enabled }
     }
 
+    suspend fun setCrossfadeSeconds(seconds: Int) {
+        context.dataStore.edit { it[Keys.CROSSFADE_SECONDS] = seconds.coerceIn(0, 10) }
+    }
+
+    suspend fun setReplayGainEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.REPLAY_GAIN] = enabled }
+    }
+
     suspend fun setResumePlayback(enabled: Boolean) {
         context.dataStore.edit { it[Keys.RESUME_PLAYBACK] = enabled }
+    }
+
+    suspend fun setAutoplayEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTOPLAY_ENABLED] = enabled }
+    }
+
+    suspend fun setAudioFocusBehavior(behavior: AudioFocusBehavior) {
+        context.dataStore.edit { it[Keys.AUDIO_FOCUS_BEHAVIOR] = behavior.name }
     }
 
     suspend fun setMinTrackDurationSec(seconds: Int) {
         context.dataStore.edit { it[Keys.MIN_DURATION_SEC] = seconds }
     }
 
+    suspend fun setRescanInterval(interval: RescanInterval) {
+        context.dataStore.edit { it[Keys.RESCAN_INTERVAL] = interval.name }
+    }
+
+    suspend fun setExcludedFolders(folders: Set<String>) {
+        context.dataStore.edit { it[Keys.EXCLUDED_FOLDERS] = folders }
+    }
+
+    suspend fun toggleExcludedFolder(folderPath: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.EXCLUDED_FOLDERS].orEmpty().toMutableSet()
+            if (!current.add(folderPath)) {
+                current.remove(folderPath)
+            }
+            prefs[Keys.EXCLUDED_FOLDERS] = current
+        }
+    }
+
     suspend fun setHighResArtwork(enabled: Boolean) {
         context.dataStore.edit { it[Keys.HIGH_RES_ARTWORK] = enabled }
+    }
+
+    suspend fun setLastScanTimestampMs(timestampMs: Long) {
+        context.dataStore.edit { it[Keys.LAST_SCAN_TIMESTAMP_MS] = timestampMs }
+    }
+
+    suspend fun setNotificationsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.NOTIFICATIONS_ENABLED] = enabled }
+    }
+
+    suspend fun setLockScreenControls(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.LOCK_SCREEN_CONTROLS] = enabled }
+    }
+
+    suspend fun setShowNotificationArtwork(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_NOTIFICATION_ARTWORK] = enabled }
+    }
+
+    suspend fun setNotificationAppearance(appearance: NotificationAppearance) {
+        context.dataStore.edit { it[Keys.NOTIFICATION_APPEARANCE] = appearance.name }
     }
 
     suspend fun setSort(order: SortOrder, direction: SortDirection) {

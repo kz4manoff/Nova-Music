@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -57,12 +58,17 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.novamusic.player.AppContainer
+import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.ui.NovaViewModelFactory
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassMiniPlayer
 import com.novamusic.player.ui.components.LiquidGlassNavTab
 import com.novamusic.player.ui.components.LiquidGlassTabBar
+import com.novamusic.player.ui.components.LocalBlurIntensity
+import com.novamusic.player.ui.components.LocalHapticEnabled
+import com.novamusic.player.ui.components.LocalNavBarAppearance
+import com.novamusic.player.ui.components.LocalPlayerAnimationStyle
 import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.rememberReducedMotion
 import kotlin.math.roundToInt
@@ -104,6 +110,7 @@ fun NovaMainAppShell(
     val playerState by playerViewModel.playerState.collectAsStateWithLifecycle()
     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val eqState by equalizerViewModel.eqState.collectAsStateWithLifecycle()
+    val appSettings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
     var showNowPlaying by remember { mutableStateOf(openNowPlayingTrigger > 0) }
     var lyricsTargetSong by remember { mutableStateOf<Song?>(null) }
 
@@ -150,7 +157,7 @@ fun NovaMainAppShell(
     }
 
     val miniPlayerHeight = if (playerState.currentSong != null) 86.dp else 0.dp
-    val reducedMotion = rememberReducedMotion()
+    val reducedMotion = rememberReducedMotion() || !appSettings.interfaceAnimations
     val overlayOpen = showNowPlaying || lyricsTargetSong != null
     val bgScale by animateFloatAsState(
         targetValue = if (overlayOpen && !reducedMotion) 0.945f else 1f,
@@ -168,14 +175,18 @@ fun NovaMainAppShell(
 
     CompositionLocalProvider(
         LocalArtworkPalette provides artworkPalette,
-        LocalReducedMotion provides reducedMotion
+        LocalReducedMotion provides reducedMotion,
+        LocalHapticEnabled provides appSettings.hapticFeedback,
+        LocalBlurIntensity provides appSettings.blurIntensity,
+        LocalPlayerAnimationStyle provides appSettings.playerAnimationStyle,
+        LocalNavBarAppearance provides appSettings.navBarAppearance
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Live blurred album artwork + extracted color ambient light scatter behind all screens
             LiquidGlassBackdrop(
                 artworkUri = playerState.currentSong?.artworkUri,
                 isPlaying = playerState.isPlaying,
-                intensity = 0.92f
+                intensity = (0.92f * appSettings.blurIntensity).coerceIn(0.25f, 1.55f)
             )
 
             Scaffold(
@@ -349,8 +360,6 @@ fun NovaMainAppShell(
                         SettingsScreen(
                             viewModel = settingsViewModel,
                             onBack = null,
-                            onOpenEqualizer = { navController.navigate(NovaDestinations.EQUALIZER) },
-                            onOpenAbout = { navController.navigate(NovaDestinations.ABOUT) },
                             bottomContentPadding = miniPlayerHeight
                         )
                     }
@@ -480,33 +489,41 @@ fun NovaMainAppShell(
                 }
             }
 
-            // Full-Screen Fluid Spring Liquid Glass Now Playing Sheet Overlay
+            // Full-Screen Fluid Morph Liquid Glass Now Playing Sheet Overlay expanding from Mini Player artwork origin
             AnimatedVisibility(
                 visible = showNowPlaying,
-                enter = if (reducedMotion) {
-                    fadeIn(tween(110))
-                } else {
-                    slideInVertically(
+                enter = when {
+                    reducedMotion -> fadeIn(tween(110))
+                    appSettings.playerAnimationStyle == PlayerAnimationStyle.MINIMAL -> fadeIn(tween(180))
+                    else -> slideInVertically(
                         animationSpec = spring<IntOffset>(
-                            dampingRatio = 0.84f,
+                            dampingRatio = if (appSettings.playerAnimationStyle == PlayerAnimationStyle.FLUID) 0.82f else 0.90f,
                             stiffness = Spring.StiffnessMediumLow
                         ),
-                        initialOffsetY = { it }
+                        initialOffsetY = { (it * 0.34f).roundToInt() }
                     ) + scaleIn(
-                        initialScale = 0.96f,
-                        animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow)
-                    ) + fadeIn(tween(240))
+                        initialScale = 0.86f,
+                        transformOrigin = TransformOrigin(0.20f, 0.90f),
+                        animationSpec = spring(
+                            dampingRatio = if (appSettings.playerAnimationStyle == PlayerAnimationStyle.FLUID) 0.82f else 0.90f,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    ) + fadeIn(tween(240, easing = FastOutSlowInEasing))
                 },
-                exit = if (reducedMotion) {
-                    fadeOut(tween(100))
-                } else {
-                    slideOutVertically(
+                exit = when {
+                    reducedMotion -> fadeOut(tween(100))
+                    appSettings.playerAnimationStyle == PlayerAnimationStyle.MINIMAL -> fadeOut(tween(150))
+                    else -> slideOutVertically(
                         animationSpec = spring<IntOffset>(
-                            dampingRatio = 0.90f,
+                            dampingRatio = 0.92f,
                             stiffness = Spring.StiffnessMedium
                         ),
-                        targetOffsetY = { it }
-                    ) + fadeOut(tween(200))
+                        targetOffsetY = { (it * 0.34f).roundToInt() }
+                    ) + scaleOut(
+                        targetScale = 0.86f,
+                        transformOrigin = TransformOrigin(0.20f, 0.90f),
+                        animationSpec = tween(210, easing = FastOutSlowInEasing)
+                    ) + fadeOut(tween(190))
                 }
             ) {
                 Box(

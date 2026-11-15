@@ -15,6 +15,7 @@ import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.data.model.RepeatModeOption
 import com.novamusic.player.data.model.SleepTimerState
 import com.novamusic.player.data.model.Song
+import com.novamusic.player.data.preferences.AppSettings
 import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.service.MusicService
@@ -45,10 +46,67 @@ class AudioPlayerManager(
     private var mediaController: MediaController? = null
     private var positionJob: Job? = null
     private var sleepTimerJob: Job? = null
+    private var crossfadeJob: Job? = null
     private var lastRecordedSongId: Long = -1L
     private var hasRestoredSession = false
     private var pendingPlaybackAction: (() -> Unit)? = null
     private var consecutiveErrors = 0
+    private var currentSettings: AppSettings = AppSettings()
+
+    init {
+        scope.launch {
+            var prevShowArtwork = currentSettings.showNotificationArtwork
+            preferences.appSettings.collect { settings ->
+                currentSettings = settings
+                if (prevShowArtwork != settings.showNotificationArtwork) {
+                    prevShowArtwork = settings.showNotificationArtwork
+                    refreshMediaItemMetadataArtwork(settings.showNotificationArtwork)
+                }
+                applyTargetPlaybackVolume()
+            }
+        }
+    }
+
+    private fun targetVolume(): Float = if (currentSettings.replayGainEnabled) 0.84f else 1.0f
+
+    private fun applyTargetPlaybackVolume() {
+        val controller = mediaController ?: return
+        if (crossfadeJob?.isActive != true) {
+            controller.volume = targetVolume()
+        }
+    }
+
+    private fun runFadeInIfNeeded() {
+        val controller = mediaController ?: return
+        val fadeSec = currentSettings.crossfadeSeconds
+        val endVol = targetVolume()
+        crossfadeJob?.cancel()
+        if (fadeSec <= 0) {
+            controller.volume = endVol
+            return
+        }
+        val durationMs = (fadeSec * 600L).coerceIn(450L, 4500L)
+        crossfadeJob = scope.launch {
+            val steps = 16
+            val stepMs = durationMs / steps
+            for (i in 1..steps) {
+                val frac = i.toFloat() / steps.toFloat()
+                controller.volume = (endVol * (0.18f + 0.82f * frac)).coerceIn(0f, 1f)
+                delay(stepMs)
+            }
+            controller.volume = endVol
+        }
+    }
+
+    private fun refreshMediaItemMetadataArtwork(showArtwork: Boolean) {
+        val controller = mediaController ?: return
+        val count = controller.mediaItemCount
+        for (i in 0 until count) {
+            val item = controller.getMediaItemAt(i)
+            val song = songRegistry[item.mediaId] ?: continue
+            controller.replaceMediaItem(i, song.toMediaItem(showArtwork))
+        }
+    }
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -56,6 +114,7 @@ class AudioPlayerManager(
             if (isPlaying) {
                 consecutiveErrors = 0
                 _playerState.value = _playerState.value.copy(playbackError = null)
+                applyTargetPlaybackVolume()
                 startPositionTicker()
             } else {
                 stopPositionTicker()
@@ -70,6 +129,8 @@ class AudioPlayerManager(
                 _playerState.value = _playerState.value.copy(
                     sleepTimer = SleepTimerState()
                 )
+            } else if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+                runFadeInIfNeeded()
             }
             syncStateFromController()
             val songId = mediaItem?.mediaId?.toLongOrNull() ?: -1L
@@ -85,6 +146,20 @@ class AudioPlayerManager(
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_READY) {
                 consecutiveErrors = 0
+            } else if (playbackState == Player.STATE_ENDED &&
+                currentSettings.autoplayEnabled &&
+                mediaController?.repeatMode == Player.REPEAT_MODE_OFF
+            ) {
+                val all = repository.allSongs.value
+                val currentId = _playerState.value.currentSong?.id
+                val candidates = all.filter { it.id != currentId }
+                val nextUp = candidates.randomOrNull()
+                if (nextUp != null) {
+                    addToQueue(nextUp)
+                    mediaController?.seekToNextMediaItem()
+                    mediaController?.prepare()
+                    mediaController?.play()
+                }
             }
             syncStateFromController()
         }
@@ -188,10 +263,11 @@ class AudioPlayerManager(
         }
 
         val startIndex = queueSongs.indexOfFirst { it.id == saved.lastSongId }.coerceAtLeast(0)
-        val items = queueSongs.map { it.toMediaItem() }
+        val items = queueSongs.map { it.toMediaItem(settings.showNotificationArtwork) }
         controller.setMediaItems(items, startIndex, saved.lastPositionMs.coerceAtLeast(0L))
         controller.shuffleModeEnabled = saved.shuffleEnabled
         controller.repeatMode = saved.repeatMode.toMedia3RepeatMode()
+        controller.volume = targetVolume()
         controller.prepare()
         controller.playWhenReady = false
         hasRestoredSession = true
@@ -210,9 +286,10 @@ class AudioPlayerManager(
             return
         }
 
-        val mediaItems = effectiveQueue.map { it.toMediaItem() }
+        val mediaItems = effectiveQueue.map { it.toMediaItem(currentSettings.showNotificationArtwork) }
         controller.setMediaItems(mediaItems, startIndex, 0L)
         controller.prepare()
+        runFadeInIfNeeded()
         controller.play()
         lastRecordedSongId = song.id
         _playerState.value = _playerState.value.copy(playbackError = null)
@@ -233,8 +310,9 @@ class AudioPlayerManager(
         }
         controller.shuffleModeEnabled = shuffle
         val safeIndex = startIndex.coerceIn(0, songs.lastIndex)
-        controller.setMediaItems(songs.map { it.toMediaItem() }, safeIndex, 0L)
+        controller.setMediaItems(songs.map { it.toMediaItem(currentSettings.showNotificationArtwork) }, safeIndex, 0L)
         controller.prepare()
+        runFadeInIfNeeded()
         controller.play()
         val firstSong = songs[safeIndex]
         lastRecordedSongId = firstSong.id
@@ -320,7 +398,7 @@ class AudioPlayerManager(
             return
         }
         val insertIndex = (controller.currentMediaItemIndex + 1).coerceAtMost(controller.mediaItemCount)
-        controller.addMediaItem(insertIndex, song.toMediaItem())
+        controller.addMediaItem(insertIndex, song.toMediaItem(currentSettings.showNotificationArtwork))
         syncStateFromController()
         persistPlaybackSnapshot()
     }
@@ -332,7 +410,7 @@ class AudioPlayerManager(
             playSong(song)
             return
         }
-        controller.addMediaItem(song.toMediaItem())
+        controller.addMediaItem(song.toMediaItem(currentSettings.showNotificationArtwork))
         syncStateFromController()
         persistPlaybackSnapshot()
     }
@@ -415,6 +493,14 @@ class AudioPlayerManager(
                     val dur = controller.duration.takeIf { it > 0L }
                         ?: _playerState.value.currentSong?.durationMs
                         ?: 0L
+                    val crossfadeWindowMs = currentSettings.crossfadeSeconds * 1000L
+                    if (crossfadeWindowMs > 0L && dur > crossfadeWindowMs + 1500L && controller.hasNextMediaItem()) {
+                        val remainingMs = dur - pos
+                        if (remainingMs in 1L..crossfadeWindowMs) {
+                            val fadeOutFrac = (remainingMs.toFloat() / crossfadeWindowMs.toFloat()).coerceIn(0.15f, 1f)
+                            controller.volume = targetVolume() * fadeOutFrac
+                        }
+                    }
                     _playerState.value = _playerState.value.copy(
                         positionMs = pos,
                         durationMs = dur,
@@ -484,21 +570,22 @@ class AudioPlayerManager(
         }
     }
 
-    private fun Song.toMediaItem(): MediaItem {
-        val metadata = MediaMetadata.Builder()
+    private fun Song.toMediaItem(showArtwork: Boolean = true): MediaItem {
+        val metaBuilder = MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(artist)
             .setAlbumTitle(album)
             .setAlbumArtist(artist)
-            .setArtworkUri(artworkUri)
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-            .build()
+        if (showArtwork) {
+            metaBuilder.setArtworkUri(artworkUri)
+        }
         return MediaItem.Builder()
             .setMediaId(id.toString())
             .setUri(uri)
-            .setMediaMetadata(metadata)
+            .setMediaMetadata(metaBuilder.build())
             .build()
     }
 

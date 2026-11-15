@@ -126,9 +126,46 @@ enum class ArtworkStyle(val label: String) {
 }
 
 enum class ThemeMode(val label: String) {
-    AMOLED("AMOLED Black"),
-    DARK("Dark Graphite"),
-    LIGHT("Light")
+    AMOLED("AMOLED"),
+    DARK("Dark"),
+    LIGHT("Light"),
+    SYSTEM("System")
+}
+
+enum class PlayerAnimationStyle(val label: String, val description: String) {
+    FLUID("Fluid Spring", "Physics-driven overshoot and morphing transitions"),
+    BALANCED("Balanced", "Crisp iOS-style easing with subtle bounce"),
+    MINIMAL("Minimal", "Fast fades with reduced spatial travel")
+}
+
+enum class NavBarAppearance(val label: String, val description: String) {
+    FLOATING_GLASS("Floating Glass", "Full pill dock with icons and labels"),
+    COMPACT("Compact Dock", "Slimmer floating glass bar with labels"),
+    MINIMAL_PILL("Minimal Pill", "Icon-only floating glass capsule")
+}
+
+enum class AudioQualityMode(val label: String, val description: String) {
+    LOSSLESS_DIRECT("Bit-Perfect Direct", "Direct PCM path with audio offload when idle"),
+    HIGH_RES("High-Res Studio", "Full precision DSP pipeline for EQ and spatial audio"),
+    BALANCED("Battery Balanced", "Standard decoding optimized for endurance")
+}
+
+enum class AudioFocusBehavior(val label: String, val description: String) {
+    PAUSE_ON_LOSS("Pause & Resume", "Pause on calls/navigation and auto-duck alerts"),
+    DUCK("Lower Volume", "Duck volume during short notifications"),
+    IGNORE_TRANSIENT("Keep Playing", "Continue playback uninterrupted over transient alerts")
+}
+
+enum class RescanInterval(val label: String) {
+    ON_START("On App Launch"),
+    DAILY("Once Daily"),
+    MANUAL("Manual Only")
+}
+
+enum class NotificationAppearance(val label: String, val description: String) {
+    ARTWORK_GLOW("Rich Artwork", "Large artwork badge with Prev, Play/Pause, Next"),
+    MEDIA_CARD("Standard Card", "Clean system media card with transport actions"),
+    COMPACT("Compact", "Minimal Play/Pause & Next controls only")
 }
 
 enum class AccentColorOption(val label: String, val hex: Long) {

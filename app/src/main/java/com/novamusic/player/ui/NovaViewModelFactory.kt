@@ -37,7 +37,13 @@ class NovaViewModelFactory(
                 PlaylistsViewModel(container.musicRepository, container.audioPlayerManager) as T
             }
             modelClass.isAssignableFrom(SettingsViewModel::class.java) -> {
-                SettingsViewModel(container.preferencesRepository, container.musicRepository, container.audioPlayerManager) as T
+                SettingsViewModel(
+                    context = container.appContext,
+                    preferences = container.preferencesRepository,
+                    repository = container.musicRepository,
+                    playerManager = container.audioPlayerManager,
+                    equalizerManager = container.equalizerManager
+                ) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

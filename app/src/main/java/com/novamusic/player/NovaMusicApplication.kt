@@ -10,9 +10,10 @@ import com.novamusic.player.data.scanner.MusicScanner
 import com.novamusic.player.database.NovaDatabase
 
 class AppContainer(context: Context) {
-    val database: NovaDatabase = NovaDatabase.getInstance(context)
-    val preferencesRepository: PreferencesRepository = PreferencesRepository(context)
-    val musicScanner: MusicScanner = MusicScanner(context)
+    val appContext: Context = context.applicationContext
+    val database: NovaDatabase = NovaDatabase.getInstance(appContext)
+    val preferencesRepository: PreferencesRepository = PreferencesRepository(appContext)
+    val musicScanner: MusicScanner = MusicScanner(appContext)
     val musicRepository: MusicRepository = MusicRepository(
         scanner = musicScanner,
         database = database,
@@ -20,7 +21,7 @@ class AppContainer(context: Context) {
     )
     val equalizerManager: EqualizerManager = EqualizerManager(preferencesRepository)
     val audioPlayerManager: AudioPlayerManager = AudioPlayerManager(
-        context = context,
+        context = appContext,
         repository = musicRepository,
         preferences = preferencesRepository
     )

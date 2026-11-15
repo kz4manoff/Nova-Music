@@ -1,6 +1,7 @@
 package com.novamusic.player.ui.theme
 
 import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -63,12 +64,18 @@ private val NovaShapes = Shapes(
 fun NovaMusicTheme(
     themeMode: ThemeMode = ThemeMode.AMOLED,
     accentColor: AccentColorOption = AccentColorOption.ELECTRIC_ORANGE,
+    dynamicAccentColor: Color? = null,
     content: @Composable () -> Unit
 ) {
-    val accent = Color(accentColor.hex)
-    val isLight = themeMode == ThemeMode.LIGHT
+    val systemDark = isSystemInDarkTheme()
+    val effectiveMode = when (themeMode) {
+        ThemeMode.SYSTEM -> if (systemDark) ThemeMode.DARK else ThemeMode.LIGHT
+        else -> themeMode
+    }
+    val accent = dynamicAccentColor ?: Color(accentColor.hex)
+    val isLight = effectiveMode == ThemeMode.LIGHT
 
-    val colorScheme = when (themeMode) {
+    val colorScheme = when (effectiveMode) {
         ThemeMode.AMOLED -> darkColorScheme(
             primary = accent,
             onPrimary = Color(0xFF070709),
@@ -85,7 +92,7 @@ fun NovaMusicTheme(
             outline = NovaAmoledBorder,
             error = NovaError
         )
-        ThemeMode.DARK -> darkColorScheme(
+        ThemeMode.DARK, ThemeMode.SYSTEM -> darkColorScheme(
             primary = accent,
             onPrimary = Color(0xFF070709),
             primaryContainer = accent.copy(alpha = 0.22f),
@@ -119,7 +126,7 @@ fun NovaMusicTheme(
         )
     }
 
-    val extended = when (themeMode) {
+    val extended = when (effectiveMode) {
         ThemeMode.AMOLED -> NovaExtendedColors(
             elevatedSurface = NovaAmoledSurfaceElevated,
             recessedSurface = NovaAmoledSurfaceRecessed,
@@ -135,7 +142,7 @@ fun NovaMusicTheme(
             isAmoled = true,
             isLight = false
         )
-        ThemeMode.DARK -> NovaExtendedColors(
+        ThemeMode.DARK, ThemeMode.SYSTEM -> NovaExtendedColors(
             elevatedSurface = NovaDarkSurfaceElevated,
             recessedSurface = NovaDarkSurfaceRecessed,
             dockSurface = NovaDarkDock,

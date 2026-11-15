@@ -117,6 +117,7 @@ import com.novamusic.player.ui.components.LiquidGlassPlayerControls
 import com.novamusic.player.ui.components.LiquidGlassSeekBar
 import com.novamusic.player.ui.components.LiquidGlassSheet
 import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.LocalBlurIntensity
 import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.SleepTimerDialog
 import com.novamusic.player.ui.components.TrackInfoDialog
@@ -177,10 +178,11 @@ fun NowPlayingScreen(
             .clip(RoundedCornerShape(topStart = dragCorners, topEnd = dragCorners))
     ) {
         // Full-bleed deeply blurred album artwork + extracted color ambient light scatter
+        val blurScale = LocalBlurIntensity.current
         LiquidGlassBackdrop(
             artworkUri = song?.artworkUri,
             isPlaying = playerState.isPlaying,
-            intensity = 1.32f
+            intensity = (1.32f * blurScale).coerceIn(0.30f, 1.85f)
         )
 
         Column(

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.novamusic.player.data.model.RescanInterval
 import com.novamusic.player.data.preferences.AppSettings
 import com.novamusic.player.navigation.NovaMainAppShell
 import com.novamusic.player.permissions.PermissionHelper
@@ -54,6 +56,8 @@ import com.novamusic.player.ui.components.LiquidGlassButton
 import com.novamusic.player.ui.components.LiquidGlassSurface
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.ui.theme.NovaMusicTheme
+import com.novamusic.player.ui.theme.rememberArtworkPalette
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -85,10 +89,32 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val settings by container.preferencesRepository.appSettings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
+            val playerState by container.audioPlayerManager.playerState
+                .collectAsStateWithLifecycle()
+
+            LaunchedEffect(settings.keepScreenOn) {
+                if (settings.keepScreenOn) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+
+            val baseAccent = Color(settings.accentColor.hex)
+            val dynamicPalette = rememberArtworkPalette(
+                artworkUri = if (settings.dynamicColors) playerState.currentSong?.artworkUri else null,
+                fallbackAccent = baseAccent
+            )
+            val resolvedDynamicAccent = if (settings.dynamicColors && playerState.currentSong != null) {
+                dynamicPalette.primary
+            } else {
+                null
+            }
 
             NovaMusicTheme(
                 themeMode = settings.themeMode,
-                accentColor = settings.accentColor
+                accentColor = settings.accentColor,
+                dynamicAccentColor = resolvedDynamicAccent
             ) {
                 val context = LocalContext.current
                 val permissionLauncher = rememberLauncherForActivityResult(
@@ -149,7 +175,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun initializeLibraryAndRestore(container: AppContainer) {
         lifecycleScope.launch {
-            container.musicRepository.refreshLibrary()
+            val settings = container.preferencesRepository.appSettings.first()
+            val now = System.currentTimeMillis()
+            val shouldScan = when {
+                container.musicRepository.allSongs.value.isEmpty() -> true
+                settings.rescanInterval == RescanInterval.ON_START -> true
+                settings.rescanInterval == RescanInterval.DAILY ->
+                    (now - settings.lastScanTimestampMs) >= 86_400_000L
+                settings.rescanInterval == RescanInterval.MANUAL -> false
+                else -> true
+            }
+            if (shouldScan) {
+                container.musicRepository.refreshLibrary()
+            }
             val songs = container.musicRepository.allSongs.value
             container.audioPlayerManager.restoreLastSessionIfNeeded(songs)
         }

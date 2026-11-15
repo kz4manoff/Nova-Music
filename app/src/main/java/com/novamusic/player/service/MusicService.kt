@@ -1,7 +1,9 @@
 package com.novamusic.player.service
 
+import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -10,15 +12,22 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import androidx.media3.session.MediaSessionService
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import com.novamusic.player.MainActivity
 import com.novamusic.player.NovaMusicApplication
 import com.novamusic.player.R
+import com.novamusic.player.data.model.AudioFocusBehavior
+import com.novamusic.player.data.model.AudioQualityMode
+import com.novamusic.player.data.model.NotificationAppearance
+import com.novamusic.player.data.preferences.AppSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,6 +41,8 @@ class MusicService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSession? = null
     private lateinit var exoPlayer: ExoPlayer
+    @Volatile
+    private var currentSettings: AppSettings = AppSettings()
 
     override fun onCreate() {
         super.onCreate()
@@ -68,7 +79,17 @@ class MusicService : MediaSessionService() {
 
         serviceScope.launch {
             container.preferencesRepository.appSettings.collectLatest { settings ->
+                currentSettings = settings
                 exoPlayer.pauseAtEndOfMediaItems = !settings.gaplessPlayback
+                val handleFocus = settings.audioFocusBehavior != AudioFocusBehavior.IGNORE_TRANSIENT
+                exoPlayer.setAudioAttributes(audioAttributes, handleFocus)
+                exoPlayer.setWakeMode(
+                    when (settings.audioQuality) {
+                        AudioQualityMode.LOSSLESS_DIRECT -> C.WAKE_MODE_LOCAL
+                        AudioQualityMode.HIGH_RES -> C.WAKE_MODE_LOCAL
+                        AudioQualityMode.BALANCED -> C.WAKE_MODE_NONE
+                    }
+                )
             }
         }
 
@@ -114,21 +135,22 @@ class MusicService : MediaSessionService() {
 
                         container.audioPlayerManager.registerSongs(queueSongs)
                         val startIdx = queueSongs.indexOfFirst { it.id == saved.lastSongId }.coerceAtLeast(0)
+                        val includeArt = currentSettings.showNotificationArtwork
                         val mediaItems = queueSongs.map { song ->
+                            val metaBuilder = MediaMetadata.Builder()
+                                .setTitle(song.title)
+                                .setArtist(song.artist)
+                                .setAlbumTitle(song.album)
+                                .setIsPlayable(true)
+                                .setIsBrowsable(false)
+                                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                            if (includeArt) {
+                                metaBuilder.setArtworkUri(song.artworkUri)
+                            }
                             MediaItem.Builder()
                                 .setMediaId(song.id.toString())
                                 .setUri(song.uri)
-                                .setMediaMetadata(
-                                    MediaMetadata.Builder()
-                                        .setTitle(song.title)
-                                        .setArtist(song.artist)
-                                        .setAlbumTitle(song.album)
-                                        .setArtworkUri(song.artworkUri)
-                                        .setIsPlayable(true)
-                                        .setIsBrowsable(false)
-                                        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-                                        .build()
-                                )
+                                .setMediaMetadata(metaBuilder.build())
                                 .build()
                         }
                         future.set(
@@ -151,12 +173,45 @@ class MusicService : MediaSessionService() {
             .setCallback(sessionCallback)
             .build()
 
-        val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
+        val defaultProvider = DefaultMediaNotificationProvider.Builder(this)
             .build()
             .apply {
                 setSmallIcon(R.drawable.ic_nova_notification)
             }
-        setMediaNotificationProvider(notificationProvider)
+
+        val customProvider = object : MediaNotification.Provider {
+            override fun createNotification(
+                mediaSession: MediaSession,
+                customLayout: ImmutableList<CommandButton>,
+                actionFactory: MediaNotification.ActionFactory,
+                onNotificationChangedCallback: MediaNotification.Provider.Callback
+            ): MediaNotification {
+                val base = defaultProvider.createNotification(
+                    mediaSession,
+                    customLayout,
+                    actionFactory,
+                    onNotificationChangedCallback
+                )
+                val s = currentSettings
+                val notification = base.notification
+                notification.visibility = if (s.notificationsEnabled && s.lockScreenControls) {
+                    Notification.VISIBILITY_PUBLIC
+                } else {
+                    Notification.VISIBILITY_SECRET
+                }
+                if (!s.notificationsEnabled || s.notificationAppearance == NotificationAppearance.COMPACT) {
+                    notification.priority = Notification.PRIORITY_MIN
+                }
+                return base
+            }
+
+            override fun handleCustomCommand(
+                session: MediaSession,
+                action: String,
+                extras: Bundle
+            ): Boolean = defaultProvider.handleCustomCommand(session, action, extras)
+        }
+        setMediaNotificationProvider(customProvider)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {

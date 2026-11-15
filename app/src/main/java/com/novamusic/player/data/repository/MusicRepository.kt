@@ -19,19 +19,25 @@ import com.novamusic.player.database.entities.FavoriteSongEntity
 import com.novamusic.player.database.entities.PlaylistEntity
 import com.novamusic.player.database.entities.PlaylistSongCrossRef
 import com.novamusic.player.database.entities.TrackLyricsEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class MusicRepository(
     private val scanner: MusicScanner,
     private val database: NovaDatabase,
     private val preferences: PreferencesRepository
 ) {
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val favoriteDao = database.favoriteDao()
     private val historyDao = database.historyDao()
     private val playlistDao = database.playlistDao()
@@ -39,6 +45,7 @@ class MusicRepository(
     private val presetDao = database.equalizerPresetDao()
     private val lyricsDao = database.lyricsDao()
 
+    private val _rawSongs = MutableStateFlow<List<Song>>(emptyList())
     private val _allSongs = MutableStateFlow<List<Song>>(emptyList())
     val allSongs: StateFlow<List<Song>> = _allSongs.asStateFlow()
 
@@ -47,6 +54,48 @@ class MusicRepository(
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    init {
+        repoScope.launch {
+            combine(
+                _rawSongs,
+                preferences.appSettings.map { it.excludedFolders }.distinctUntilChanged()
+            ) { rawSongs, excluded ->
+                if (excluded.isEmpty()) rawSongs
+                else rawSongs.filterNot { it.folderPath in excluded }
+            }.collect { filtered ->
+                _allSongs.value = filtered
+                if (filtered.isNotEmpty() || _rawSongs.value.isNotEmpty()) {
+                    _genres.value = filtered
+                        .groupBy { it.genre }
+                        .entries
+                        .mapIndexed { idx, (name, genreSongs) ->
+                            Genre(id = idx.toLong() + 1L, name = name, songCount = genreSongs.size)
+                        }
+                        .sortedBy { it.name.lowercase() }
+                }
+            }
+        }
+    }
+
+    val availableFolders: Flow<List<MusicFolder>> = _rawSongs.map { songs ->
+        songs.groupBy { it.folderPath }
+            .values
+            .map { folderSongs ->
+                val first = folderSongs.first()
+                MusicFolder(
+                    path = first.folderPath,
+                    name = first.folderName,
+                    songCount = folderSongs.size,
+                    isFavorite = false
+                )
+            }
+            .sortedBy { it.name.lowercase() }
+    }
+
+    val totalLibraryBytes: Flow<Long> = _allSongs.map { songs ->
+        songs.sumOf { it.sizeBytes.coerceAtLeast(0L) }
+    }
 
     val favoriteSongIds: Flow<Set<Long>> = favoriteDao.observeFavoriteSongIds().map { it.toSet() }
 
@@ -145,10 +194,27 @@ class MusicRepository(
         if (_isScanning.value) return
         _isScanning.value = true
         try {
-            val minDuration = preferences.appSettings.first().minTrackDurationSec
-            val (songs, genreList) = scanner.scanDeviceMusic(minDurationSec = minDuration)
-            _allSongs.value = songs
-            _genres.value = genreList
+            val settings = preferences.appSettings.first()
+            val (songs, genreList) = scanner.scanDeviceMusic(minDurationSec = settings.minTrackDurationSec)
+            _rawSongs.value = songs
+            val filtered = if (settings.excludedFolders.isEmpty()) {
+                songs
+            } else {
+                songs.filterNot { it.folderPath in settings.excludedFolders }
+            }
+            _allSongs.value = filtered
+            _genres.value = if (settings.excludedFolders.isEmpty()) {
+                genreList
+            } else {
+                filtered
+                    .groupBy { it.genre }
+                    .entries
+                    .mapIndexed { idx, (name, genreSongs) ->
+                        Genre(id = idx.toLong() + 1L, name = name, songCount = genreSongs.size)
+                    }
+                    .sortedBy { it.name.lowercase() }
+            }
+            preferences.setLastScanTimestampMs(System.currentTimeMillis())
         } finally {
             _isScanning.value = false
         }
