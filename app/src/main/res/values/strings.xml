@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NOVA MUSIC</string>
+    <string name="app_name">Nova Music</string>
     <string name="notification_channel_name">Nova Music Playback</string>
     <string name="notification_channel_description">Media playback controls and active track information</string>
     <string name="permission_audio_title">Access Your Music Library</string>
