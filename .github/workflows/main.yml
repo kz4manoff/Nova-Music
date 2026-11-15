@@ -14,41 +14,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Project
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Check Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la "$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/platforms" || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Check Project Files
+      - name: Check Project
         run: |
-          echo "Project root:"
           ls -la
-          echo "App folder:"
           ls -la app
-          echo "Gradle files:"
-          find . -maxdepth 2 -type f \( -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradle.properties" \)
 
-      - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses || true
-
-      - name: Build Debug APK
+      - name: Build APK
         run: gradle assembleDebug --stacktrace
 
-      - name: Check APK
-        run: |
-          find app/build/outputs/apk -type f -name "*.apk"
+      - name: Find APK
+        run: find app/build/outputs/apk -name "*.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
