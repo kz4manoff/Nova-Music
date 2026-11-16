@@ -70,7 +70,7 @@ jobs:
           fi
 
           GRADLE_CODE=$(grep -E 'System\.getenv\("NOVA_VERSION_CODE"\)' -A1 app/build.gradle.kts | tail -n1 | tr -dc '0-9')
-          GRADLE_CODE=${GRADLE_CODE:-2}
+          GRADLE_CODE=${GRADLE_CODE:-3}
 
           TAG_COUNT=$(git tag -l 'v*' | wc -l | tr -d ' ')
           TAG_COUNT=${TAG_COUNT:-0}
