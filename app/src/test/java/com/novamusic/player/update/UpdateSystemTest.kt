@@ -480,6 +480,38 @@ class UpdateSystemTest {
         assertTrue(err3?.message?.contains("apkUrl") == true)
     }
 
+    // 13. Installed version 1.0.3 (versionCode 4) must not offer update when manifest is 1.0.3 (4) or older
+    @Test
+    fun `installed version 1_0_3 reports up to date when remote versionCode is 4 or lower`() = runBlocking {
+        val network = FakeNetworkClient(
+            manifestJsonResponse = Result.success(
+                validManifestJson(
+                    version = "1.0.3",
+                    versionCode = 4,
+                    apkUrl = "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.3/NOVA-MUSIC-v1.0.3.apk"
+                )
+            )
+        )
+        val manager = createManager(
+            network = network,
+            installedVersionCode = 4,
+            installedVersionName = "1.0.3"
+        )
+
+        manager.checkForUpdatesNow(manual = true)
+        val upToDate = manager.uiState.value as UpdateUiState.UpToDate
+        assertEquals(4, upToDate.installedVersionCode)
+        assertEquals("1.0.3", upToDate.installedVersionName)
+        assertTrue(upToDate.showConfirmationDialog)
+
+        network.manifestJsonResponse = Result.success(validManifestJson(version = "1.0.2", versionCode = 3))
+        manager.checkForUpdatesNow(manual = false)
+        val olderRemote = manager.uiState.value as UpdateUiState.UpToDate
+        assertEquals(4, olderRemote.installedVersionCode)
+        assertEquals("1.0.3", olderRemote.installedVersionName)
+        assertFalse(olderRemote.showConfirmationDialog)
+    }
+
     private companion object {
         const val OFFICIAL_APK_URL =
             "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.2/NOVA-MUSIC.apk"

@@ -16,6 +16,11 @@ on:
         description: 'Optional integer versionCode override'
         required: false
         type: string
+      sync_website_only:
+        description: 'Skip Android build and sync Nova-Website public/update.json from the latest published Release'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -26,7 +31,16 @@ concurrency:
 
 jobs:
   test-and-build:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.sync_website_only != true }}
     runs-on: ubuntu-latest
+    outputs:
+      signing_ready: ${{ steps.signing.outputs.ready }}
+      should_release: ${{ steps.version.outputs.should_release }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      apk_filename: ${{ steps.package.outputs.apk_filename }}
+      apk_version_name: ${{ steps.package.outputs.apk_version_name }}
+      apk_version_code: ${{ steps.package.outputs.apk_version_code }}
+      sha256: ${{ steps.package.outputs.sha256 }}
 
     steps:
       - name: Checkout repository
@@ -409,6 +423,8 @@ jobs:
           fi
           "${APKSIGNER}" verify --min-sdk-version 26 --print-certs "${APK_SOURCE}"
 
+          APK_VERSION_NAME="${OUT_VERSION_NAME}"
+          APK_VERSION_CODE="${OUT_VERSION_CODE}"
           AAPT2=$(find "${ANDROID_HOME}/build-tools" -name "aapt2" | sort -V | tail -n 1)
           if [[ -n "${AAPT2}" ]]; then
             BADGING=$("${AAPT2}" dump badging "${APK_SOURCE}")
@@ -441,9 +457,11 @@ jobs:
               echo "::error::APK is marked testOnly! Refusing to publish an un-installable testOnly APK."
               exit 1
             fi
+            APK_VERSION_CODE=$(sed -nE "s/.*[[:space:]]versionCode='([0-9]+)'.*/\1/p" <<< "${BADGING}" | head -n 1)
+            APK_VERSION_NAME=$(sed -nE "s/.*[[:space:]]versionName='([^']+)'.*/\1/p" <<< "${BADGING}" | head -n 1)
           fi
 
-          APK_FILENAME="NOVA-MUSIC-v${OUT_VERSION_NAME}.apk"
+          APK_FILENAME="NOVA-MUSIC-v${APK_VERSION_NAME}.apk"
           mkdir -p release-artifacts
           cp "${APK_SOURCE}" "release-artifacts/${APK_FILENAME}"
 
@@ -452,13 +470,15 @@ jobs:
           (cd release-artifacts && sha256sum -c "${APK_FILENAME}.sha256")
 
           echo "apk_filename=${APK_FILENAME}" >> "$GITHUB_OUTPUT"
+          echo "apk_version_name=${APK_VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "apk_version_code=${APK_VERSION_CODE}" >> "$GITHUB_OUTPUT"
           echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Signed Release Artifact Verified"
             echo "- **APK File**: \`${APK_FILENAME}\`"
             echo "- **Gradle Output**: \`${APK_SOURCE}\`"
-            echo "- **Version**: \`${OUT_VERSION_NAME}\` (\`versionCode: ${OUT_VERSION_CODE}\`)"
+            echo "- **Version**: \`${APK_VERSION_NAME}\` (\`versionCode: ${APK_VERSION_CODE}\`)"
             echo "- **SHA-256**: \`${SHA256}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -542,43 +562,183 @@ jobs:
           echo "apk_url=${APK_URL}" >> "$GITHUB_OUTPUT"
           echo "Verified Public APK URL: ${APK_URL}"
 
-      - name: Update website public/update.json on kz4manoff/Nova-Website
-        if: steps.signing.outputs.ready == 'true' && steps.version.outputs.should_release == 'true'
+  sync-website:
+    needs: [test-and-build]
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.sync_website_only == true) || (needs.test-and-build.result == 'success' && needs.test-and-build.outputs.signing_ready == 'true' && needs.test-and-build.outputs.should_release == 'true')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate NOVA_WEBSITE_TOKEN secret
+        shell: bash
+        env:
+          HAS_WEBSITE_TOKEN: ${{ secrets.NOVA_WEBSITE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${HAS_WEBSITE_TOKEN}" != "true" ]]; then
+            echo "::error::Missing required GitHub Actions secret NOVA_WEBSITE_TOKEN. Create a Fine-grained Personal Access Token with Contents: Read and write permission on kz4manoff/Nova-Website and save it in kz4manoff/Nova-Music -> Settings -> Secrets and variables -> Actions -> NOVA_WEBSITE_TOKEN. The published Android APK Release remains valid."
+            {
+              echo "### Website Manifest Sync Failed"
+              echo "The signed Android APK Release was published cleanly and remains valid, but website synchronization failed because the \`NOVA_WEBSITE_TOKEN\` repository secret is missing."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Inspect published GitHub Release APK & compute SHA-256
+        id: release_apk
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_TAG: ${{ needs.test-and-build.outputs.tag_name }}
+          EXPECTED_APK_FILENAME: ${{ needs.test-and-build.outputs.apk_filename }}
+          FALLBACK_VERSION_NAME: ${{ needs.test-and-build.outputs.apk_version_name }}
+          FALLBACK_VERSION_CODE: ${{ needs.test-and-build.outputs.apk_version_code }}
+          EXPECTED_SHA256: ${{ needs.test-and-build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${TARGET_TAG}" ]]; then
+            RELEASE_API="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${TARGET_TAG}"
+          else
+            RELEASE_API="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest"
+          fi
+
+          REL_JSON=$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${RELEASE_API}")
+
+          read -r REL_TAG APK_NAME APK_URL < <(python3 -c '
+          import json, os, sys
+          rel = json.loads(sys.stdin.read())
+          assert not rel.get("draft"), "Published GitHub Release must not be a draft."
+          expected_name = os.environ.get("EXPECTED_APK_FILENAME", "").strip()
+          assets = rel.get("assets", [])
+          apk_asset = None
+          if expected_name:
+              apk_asset = next((a for a in assets if a["name"] == expected_name and a["size"] > 0), None)
+          if apk_asset is None:
+              apk_asset = next(
+                  (
+                      a for a in assets
+                      if a["name"].lower().endswith(".apk")
+                      and "unsigned" not in a["name"].lower()
+                      and a["size"] > 0
+                  ),
+                  None,
+              )
+          assert apk_asset is not None, "No valid .apk asset found in published GitHub Release."
+          print(rel["tag_name"], apk_asset["name"], apk_asset["browser_download_url"])
+          ' <<< "${REL_JSON}")
+
+          TMP_APK=$(mktemp /tmp/nova-published-XXXXXX.apk)
+          trap 'rm -f "${TMP_APK}"' EXIT
+          curl -fsSL -L -o "${TMP_APK}" "${APK_URL}"
+
+          ACTUAL_SHA256=$(sha256sum "${TMP_APK}" | awk '{print $1}')
+          if [[ -n "${EXPECTED_SHA256}" && "${ACTUAL_SHA256}" != "${EXPECTED_SHA256}" ]]; then
+            echo "::error::Published APK SHA-256 (${ACTUAL_SHA256}) does not match built release APK SHA-256 (${EXPECTED_SHA256})."
+            exit 1
+          fi
+
+          APK_VERSION_NAME="${FALLBACK_VERSION_NAME}"
+          APK_VERSION_CODE="${FALLBACK_VERSION_CODE}"
+          AAPT2=""
+          if [[ -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}/build-tools" ]]; then
+            AAPT2=$(find "${ANDROID_HOME}/build-tools" -name "aapt2" | sort -V | tail -n 1 || true)
+          fi
+
+          if [[ -n "${AAPT2}" ]]; then
+            BADGING=$("${AAPT2}" dump badging "${TMP_APK}")
+            if ! grep -q "package: name='com.novamusic.player'" <<< "${BADGING}"; then
+              echo "::error::Published APK package name is not com.novamusic.player."
+              exit 1
+            fi
+            APK_VERSION_CODE=$(sed -nE "s/.*[[:space:]]versionCode='([0-9]+)'.*/\1/p" <<< "${BADGING}" | head -n 1)
+            APK_VERSION_NAME=$(sed -nE "s/.*[[:space:]]versionName='([^']+)'.*/\1/p" <<< "${BADGING}" | head -n 1)
+          else
+            if [[ -z "${APK_VERSION_NAME}" ]]; then
+              APK_VERSION_NAME="${REL_TAG#v}"
+              APK_VERSION_NAME="${APK_VERSION_NAME#V}"
+            fi
+            if [[ -z "${APK_VERSION_CODE}" ]]; then
+              APK_VERSION_CODE=$(python3 -c '
+          import json, re, sys
+          body = json.loads(sys.stdin.read()).get("body") or ""
+          for pat in [r"\"versionCode\"\s*:\s*(\d+)", r"Build\s+(\d+)"]:
+              m = re.search(pat, body)
+              if m:
+                  print(m.group(1))
+                  sys.exit(0)
+          sys.exit(1)
+          ' <<< "${REL_JSON}" || true)
+            fi
+          fi
+
+          if [[ -z "${APK_VERSION_NAME}" || ! "${APK_VERSION_CODE}" =~ ^[0-9]+$ || "${APK_VERSION_CODE}" -le 0 ]]; then
+            echo "::error::Could not determine valid versionName/versionCode from published APK ${APK_NAME}."
+            exit 1
+          fi
+
+          echo "tag_name=${REL_TAG}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${APK_NAME}" >> "$GITHUB_OUTPUT"
+          echo "apk_url=${APK_URL}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${APK_VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${APK_VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${ACTUAL_SHA256}" >> "$GITHUB_OUTPUT"
+
+          echo "Verified published GitHub Release ${REL_TAG}: ${APK_NAME} (versionName=${APK_VERSION_NAME}, versionCode=${APK_VERSION_CODE}, sha256=${ACTUAL_SHA256})"
+          echo "Exact APK URL: ${APK_URL}"
+
+      - name: Push update.json to kz4manoff/Nova-Website
         shell: bash
         env:
           NOVA_WEBSITE_TOKEN: ${{ secrets.NOVA_WEBSITE_TOKEN }}
-          VERSION_NAME: ${{ steps.version.outputs.version_name }}
-          VERSION_CODE: ${{ steps.version.outputs.version_code }}
-          APK_URL: ${{ steps.verify_release.outputs.apk_url }}
-          SHA256: ${{ steps.package.outputs.sha256 }}
+          VERSION_NAME: ${{ steps.release_apk.outputs.version_name }}
+          VERSION_CODE: ${{ steps.release_apk.outputs.version_code }}
+          APK_URL: ${{ steps.release_apk.outputs.apk_url }}
+          SHA256: ${{ steps.release_apk.outputs.sha256 }}
           WEBSITE_REPO: kz4manoff/Nova-Website
           WEBSITE_PATH: public/update.json
           WEBSITE_BRANCH: main
         run: |
           set -euo pipefail
-          if [[ -z "${NOVA_WEBSITE_TOKEN}" ]]; then
-            echo "::warning::NOVA_WEBSITE_TOKEN secret is not configured. Skipping automatic update of ${WEBSITE_REPO}/${WEBSITE_PATH}; update it manually or add a fine-grained PAT secret named NOVA_WEBSITE_TOKEN with Contents read/write access on ${WEBSITE_REPO}."
-            {
-              echo "### Website Manifest Sync Skipped"
-              echo "Add the \`NOVA_WEBSITE_TOKEN\` repository secret (Contents: Read & write on \`${WEBSITE_REPO}\`) to automatically push \`public/update.json\` and trigger Cloudflare Pages deployment on every release."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
           API_URL="https://api.github.com/repos/${WEBSITE_REPO}/contents/${WEBSITE_PATH}"
-          CURRENT_JSON=$(curl -fsSL \
+          GET_RESP=$(mktemp)
+          PUT_RESP=$(mktemp)
+          PAYLOAD_FILE=$(mktemp)
+          trap 'rm -f "${GET_RESP}" "${PUT_RESP}" "${PAYLOAD_FILE}"' EXIT
+
+          HTTP_CODE=$(curl -sS -o "${GET_RESP}" -w "%{http_code}" \
             -H "Authorization: Bearer ${NOVA_WEBSITE_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "${API_URL}?ref=${WEBSITE_BRANCH}")
 
-          PAYLOAD=$(python3 -c '
+          if [[ "${HTTP_CODE}" == "401" || "${HTTP_CODE}" == "403" ]]; then
+            echo "::error::NOVA_WEBSITE_TOKEN was rejected by GitHub API (HTTP ${HTTP_CODE}) when reading ${WEBSITE_REPO}/${WEBSITE_PATH}. Ensure it is valid and has Contents: Read and write permission on ${WEBSITE_REPO}. The published APK Release remains intact."
+            exit 1
+          elif [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "404" ]]; then
+            echo "::error::Failed to fetch ${WEBSITE_REPO}/${WEBSITE_PATH} (HTTP ${HTTP_CODE}). The published APK Release remains intact."
+            exit 1
+          fi
+
+          SYNC_STATUS=$(HTTP_CODE="${HTTP_CODE}" python3 - "${GET_RESP}" "${PAYLOAD_FILE}" <<'PYEOF'
           import base64, json, os, sys
-          meta = json.loads(sys.stdin.read())
-          file_sha = meta["sha"]
+
+          http_code = os.environ["HTTP_CODE"]
+          file_sha = None
+          existing_raw = ""
           existing = {}
-          if meta.get("content"):
-              raw_existing = base64.b64decode(meta["content"]).decode("utf-8")
-              existing = json.loads(raw_existing)
+          if http_code == "200":
+              with open(sys.argv[1], "r", encoding="utf-8") as f:
+                  meta = json.load(f)
+              file_sha = meta["sha"]
+              if meta.get("content"):
+                  existing_raw = base64.b64decode(meta["content"]).decode("utf-8")
+                  try:
+                      parsed = json.loads(existing_raw)
+                      if isinstance(parsed, dict):
+                          existing = parsed
+                  except Exception:
+                      existing = {}
 
           version_name = os.environ["VERSION_NAME"]
           version_code = int(os.environ["VERSION_CODE"])
@@ -591,25 +751,63 @@ jobs:
               "mandatoryUpdate": bool(existing.get("mandatoryUpdate", False)),
               "minimumSupportedVersion": int(existing.get("minimumSupportedVersion", 1)),
           }
-          encoded = base64.b64encode((json.dumps(manifest, indent=2) + "\n").encode("utf-8")).decode("ascii")
-          print(json.dumps({
-              "message": f"chore: update update.json to v{version_name} (versionCode {version_code})",
-              "content": encoded,
-              "sha": file_sha,
-              "branch": os.environ["WEBSITE_BRANCH"],
-          }))
-          ' <<< "${CURRENT_JSON}")
+          formatted = json.dumps(manifest, indent=2) + "\n"
 
-          curl -fsSL -X PUT \
+          if existing == manifest and existing_raw == formatted:
+              print("NO_CHANGE")
+              sys.exit(0)
+
+          body = {
+              "message": f"chore: update update.json to v{version_name} (versionCode {version_code})",
+              "content": base64.b64encode(formatted.encode("utf-8")).decode("ascii"),
+              "branch": os.environ["WEBSITE_BRANCH"],
+          }
+          if file_sha:
+              body["sha"] = file_sha
+
+          with open(sys.argv[2], "w", encoding="utf-8") as out:
+              json.dump(body, out)
+          print("UPDATE_REQUIRED")
+          PYEOF
+          )
+
+          if [[ "${SYNC_STATUS}" == "NO_CHANGE" ]]; then
+            echo "Website manifest is already synchronized: ${WEBSITE_REPO}/${WEBSITE_PATH} -> v${VERSION_NAME} (versionCode ${VERSION_CODE})."
+            {
+              echo "### Website Update Manifest Already Up To Date"
+              echo "- **Version**: \`v${VERSION_NAME}\` (\`versionCode: ${VERSION_CODE}\`)"
+              echo "- **APK URL**: \`${APK_URL}\`"
+              echo "- **SHA-256**: \`${SHA256}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          PUT_CODE=$(curl -sS -o "${PUT_RESP}" -w "%{http_code}" -X PUT \
             -H "Authorization: Bearer ${NOVA_WEBSITE_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
-            -d "${PAYLOAD}" \
-            "${API_URL}" > /dev/null
+            -d @"${PAYLOAD_FILE}" \
+            "${API_URL}")
 
-          echo "Updated ${WEBSITE_REPO}/${WEBSITE_PATH} for v${VERSION_NAME} (versionCode ${VERSION_CODE})."
+          if [[ "${PUT_CODE}" != "200" && "${PUT_CODE}" != "201" ]]; then
+            echo "::error::Failed to commit ${WEBSITE_PATH} to ${WEBSITE_REPO} (HTTP ${PUT_CODE}). Check NOVA_WEBSITE_TOKEN Contents write permissions. The published APK Release remains intact."
+            exit 1
+          fi
+
+          COMMIT_SHA=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("commit",{}).get("sha","unknown"))' < "${PUT_RESP}")
+          echo "Website manifest successfully updated: ${WEBSITE_REPO}/${WEBSITE_PATH}"
+          echo "Synced Version: v${VERSION_NAME} (versionCode ${VERSION_CODE})"
+          echo "Synced APK URL: ${APK_URL}"
+          echo "Synced SHA-256: ${SHA256}"
+          echo "Website Commit SHA: ${COMMIT_SHA}"
+          echo "Cloudflare Pages deployment triggered automatically by push to ${WEBSITE_REPO}:${WEBSITE_BRANCH}."
+
           {
             echo "### Website Update Manifest Synced"
-            echo "- Updated \`${WEBSITE_REPO}/${WEBSITE_PATH}\` on \`${WEBSITE_BRANCH}\` with \`v${VERSION_NAME}\` (\`versionCode: ${VERSION_CODE}\`)."
-            echo "- Cloudflare Pages will automatically deploy \`https://nova-website-1tg.pages.dev/update.json\`."
+            echo "- **Repository**: \`${WEBSITE_REPO}\` (\`${WEBSITE_BRANCH}\`)"
+            echo "- **Synced Version**: \`v${VERSION_NAME}\` (\`versionCode: ${VERSION_CODE}\`)"
+            echo "- **APK URL**: \`${APK_URL}\`"
+            echo "- **SHA-256**: \`${SHA256}\`"
+            echo "- **Commit SHA**: \`${COMMIT_SHA}\`"
+            echo "- **Deployment**: Cloudflare Pages builds automatically from the \`${WEBSITE_BRANCH}\` commit (\`https://nova-website-1tg.pages.dev/update.json\`)."
           } >> "$GITHUB_STEP_SUMMARY"
