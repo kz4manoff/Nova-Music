@@ -48,6 +48,9 @@ jobs:
       - name: Resolve release version metadata
         id: version
         shell: bash
+        env:
+          INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
+          INPUT_RELEASE_VERSION_CODE: ${{ inputs.release_version_code }}
         run: |
           IS_TAG=false
           TAG_NAME=""
@@ -55,8 +58,8 @@ jobs:
             IS_TAG=true
             TAG_NAME="${GITHUB_REF#refs/tags/}"
             VERSION_NAME="${TAG_NAME#v}"
-          elif [[ -n "${{ inputs.release_version }}" ]]; then
-            VERSION_NAME="${{ inputs.release_version#v }}"
+          elif [[ -n "${INPUT_RELEASE_VERSION}" ]]; then
+            VERSION_NAME="${INPUT_RELEASE_VERSION#v}"
           else
             VERSION_NAME=$(grep -E 'System\.getenv\("NOVA_VERSION_NAME"\)' -A1 app/build.gradle.kts | tail -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           fi
@@ -79,8 +82,8 @@ jobs:
           TAG_COUNT=$(git tag -l 'v*' | wc -l | tr -d ' ')
           TAG_COUNT=${TAG_COUNT:-0}
 
-          if [[ -n "${{ inputs.release_version_code }}" ]]; then
-            VERSION_CODE="${{ inputs.release_version_code }}"
+          if [[ -n "${INPUT_RELEASE_VERSION_CODE}" ]]; then
+            VERSION_CODE="${INPUT_RELEASE_VERSION_CODE}"
           elif [[ "${IS_TAG}" == "true" ]]; then
             CANDIDATE=${GRADLE_CODE}
             if [[ "${VERSION_NAME}" != "${JSON_VER}" ]] && (( JSON_CODE >= CANDIDATE )); then
@@ -105,6 +108,7 @@ jobs:
         id: signing
         shell: bash
         env:
+          IS_TAG_BUILD: ${{ steps.version.outputs.is_tag }}
           HAS_KEYSTORE: ${{ secrets.NOVA_KEYSTORE_BASE64 != '' }}
           HAS_STORE_PASS: ${{ secrets.NOVA_KEYSTORE_PASSWORD != '' }}
           HAS_KEY_ALIAS: ${{ secrets.NOVA_KEY_ALIAS != '' }}
@@ -119,7 +123,7 @@ jobs:
           if (( ${#MISSING[@]} > 0 )); then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             MSG="Missing GitHub Actions release signing secret(s): ${MISSING[*]}. Configure all 4 secrets in GitHub Repository Settings -> Secrets and variables -> Actions. Unsigned APKs cannot perform in-place app updates."
-            if [[ "${{ steps.version.outputs.is_tag }}" == "true" ]]; then
+            if [[ "${IS_TAG_BUILD}" == "true" ]]; then
               echo "::error::${MSG}"
               exit 1
             else
@@ -153,6 +157,9 @@ jobs:
         id: package
         if: steps.signing.outputs.ready == 'true'
         shell: bash
+        env:
+          OUT_VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          OUT_VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: |
           APK_SOURCE=$(find app/build/outputs/apk/release -name "*.apk" ! -name "*unsigned*" | head -n 1)
           if [[ -z "${APK_SOURCE}" || ! -f "${APK_SOURCE}" ]]; then
@@ -172,7 +179,7 @@ jobs:
           echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
 
           echo "### Signed Release Artifact" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Version**: \`${{ steps.version.outputs.version_name }}\` (\`versionCode: ${{ steps.version.outputs.version_code }}\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: \`${OUT_VERSION_NAME}\` (\`versionCode: ${OUT_VERSION_CODE}\`)" >> "$GITHUB_STEP_SUMMARY"
           echo "- **SHA-256**: \`${SHA256}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup keystore from runner
