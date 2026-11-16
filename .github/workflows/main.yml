@@ -179,23 +179,17 @@ jobs:
 
           if (( ${#MISSING[@]} > 0 )); then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            MSG="Missing GitHub Actions release signing secret(s): ${MISSING[*]}. Configure all 4 secrets in GitHub Repository Settings -> Secrets and variables -> Actions. Unsigned APKs cannot be published to GitHub Releases or used for in-place app updates."
-            if [[ "${IS_TAG_BUILD}" == "true" ]]; then
-              echo "::error::${MSG}"
-              exit 1
-            elif [[ "${SHOULD_RELEASE}" == "true" ]]; then
-              echo "::warning::${MSG}"
-            else
-              echo "::warning::${MSG}"
-            fi
+            MSG="Missing required release signing secret(s): ${MISSING[*]}. Configure all 4 secrets in GitHub Repository Settings -> Secrets and variables -> Actions. Unsigned APKs cannot be installed on Android devices."
             {
-              echo "### Signing Secrets Not Yet Configured"
-              echo "Build verified with an **unsigned release APK** artifact only. To enable automatic signed GitHub Releases, configure these 4 repository secrets:"
+              echo "### Missing Release Signing Secrets"
+              echo "Android refuses to install unsigned APKs. Configure all 4 repository secrets under **Settings → Secrets and variables → Actions** before building a release APK:"
               echo "- \`NOVA_KEYSTORE_BASE64\`"
               echo "- \`NOVA_KEYSTORE_PASSWORD\`"
               echo "- \`NOVA_KEY_ALIAS\`"
               echo "- \`NOVA_KEY_PASSWORD\`"
             } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${MSG}"
+            exit 1
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
@@ -221,13 +215,6 @@ jobs:
           NOVA_VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: ./gradlew assembleRelease --stacktrace
 
-      - name: Build unsigned Release APK (when signing secrets are not yet configured)
-        if: steps.signing.outputs.ready != 'true'
-        env:
-          NOVA_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-          NOVA_VERSION_CODE: ${{ steps.version.outputs.version_code }}
-        run: ./gradlew assembleRelease --stacktrace
-
       - name: Verify signed Release APK, metadata & SHA-256
         id: package
         if: steps.signing.outputs.ready == 'true'
@@ -245,17 +232,19 @@ jobs:
           fi
           echo "Verified Gradle Release APK output path: ${APK_SOURCE}"
 
+          unzip -t "${APK_SOURCE}" >/dev/null
+
           APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name "apksigner" | sort -V | tail -n 1)
           if [[ -z "${APKSIGNER}" ]]; then
             echo "::error::apksigner not found in ANDROID_HOME/build-tools."
             exit 1
           fi
-          "${APKSIGNER}" verify --print-certs "${APK_SOURCE}"
+          "${APKSIGNER}" verify --min-sdk-version 26 --print-certs "${APK_SOURCE}"
 
           AAPT2=$(find "${ANDROID_HOME}/build-tools" -name "aapt2" | sort -V | tail -n 1)
           if [[ -n "${AAPT2}" ]]; then
             BADGING=$("${AAPT2}" dump badging "${APK_SOURCE}")
-            echo "${BADGING}" | head -n 5
+            echo "${BADGING}" | head -n 8
             if ! grep -q "package: name='com.novamusic.player'" <<< "${BADGING}"; then
               echo "::error::APK package name is not com.novamusic.player."
               exit 1
@@ -268,8 +257,20 @@ jobs:
               echo "::error::APK versionName does not match expected ${OUT_VERSION_NAME}."
               exit 1
             fi
+            if ! grep -q "sdkVersion:'26'" <<< "${BADGING}"; then
+              echo "::error::APK minSdkVersion is not 26."
+              exit 1
+            fi
+            if ! grep -q "targetSdkVersion:'35'" <<< "${BADGING}"; then
+              echo "::error::APK targetSdkVersion is not 35."
+              exit 1
+            fi
             if grep -q "application-debuggable" <<< "${BADGING}"; then
               echo "::error::APK is marked debuggable! Refusing to publish a debuggable APK as a release."
+              exit 1
+            fi
+            if grep -q "testOnly='-1'" <<< "${BADGING}"; then
+              echo "::error::APK is marked testOnly! Refusing to publish an un-installable testOnly APK."
               exit 1
             fi
           fi
@@ -293,48 +294,6 @@ jobs:
             echo "- **SHA-256**: \`${SHA256}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify unsigned Release APK artifact (before signing secrets are configured)
-        id: unsigned_package
-        if: steps.signing.outputs.ready != 'true'
-        shell: bash
-        env:
-          OUT_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-          OUT_VERSION_CODE: ${{ steps.version.outputs.version_code }}
-        run: |
-          set -euo pipefail
-
-          APK_SOURCE=$(find app/build/outputs/apk/release -maxdepth 2 -name "*.apk" ! -name "*debug*" | head -n 1)
-          if [[ -z "${APK_SOURCE}" || ! -f "${APK_SOURCE}" || ! -s "${APK_SOURCE}" ]]; then
-            echo "::error::Release APK was not produced in app/build/outputs/apk/release. Refusing to report build success."
-            exit 1
-          fi
-          echo "Verified unsigned Release APK output path: ${APK_SOURCE}"
-
-          AAPT2=$(find "${ANDROID_HOME}/build-tools" -name "aapt2" | sort -V | tail -n 1)
-          if [[ -n "${AAPT2}" ]]; then
-            BADGING=$("${AAPT2}" dump badging "${APK_SOURCE}")
-            echo "${BADGING}" | head -n 5
-            if ! grep -q "package: name='com.novamusic.player'" <<< "${BADGING}"; then
-              echo "::error::APK package name is not com.novamusic.player."
-              exit 1
-            fi
-            if grep -q "application-debuggable" <<< "${BADGING}"; then
-              echo "::error::APK is marked debuggable!"
-              exit 1
-            fi
-          fi
-
-          APK_FILENAME="NOVA-MUSIC-v${OUT_VERSION_NAME}-release-unsigned.apk"
-          mkdir -p release-artifacts
-          cp "${APK_SOURCE}" "release-artifacts/${APK_FILENAME}"
-
-          SHA256=$(sha256sum "release-artifacts/${APK_FILENAME}" | awk '{print $1}')
-          printf '%s  %s\n' "${SHA256}" "${APK_FILENAME}" > "release-artifacts/${APK_FILENAME}.sha256"
-          (cd release-artifacts && sha256sum -c "${APK_FILENAME}.sha256")
-
-          echo "apk_filename=${APK_FILENAME}" >> "$GITHUB_OUTPUT"
-          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
-
       - name: Cleanup keystore from runner
         if: always()
         shell: bash
@@ -348,16 +307,6 @@ jobs:
           path: |
             release-artifacts/${{ steps.package.outputs.apk_filename }}
             release-artifacts/${{ steps.package.outputs.apk_filename }}.sha256
-          if-no-files-found: error
-
-      - name: Upload unsigned Release APK artifact (signing secrets pending)
-        if: steps.signing.outputs.ready != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: NOVA-MUSIC-unsigned-release-v${{ steps.version.outputs.version_name }}
-          path: |
-            release-artifacts/${{ steps.unsigned_package.outputs.apk_filename }}
-            release-artifacts/${{ steps.unsigned_package.outputs.apk_filename }}.sha256
           if-no-files-found: error
 
       - name: Publish GitHub Release
