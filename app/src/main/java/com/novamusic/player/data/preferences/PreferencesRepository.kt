@@ -64,7 +64,10 @@ data class AppSettings(
     val notificationAppearance: NotificationAppearance = NotificationAppearance.ARTWORK_GLOW,
     // Library Sorting
     val sortOrder: SortOrder = SortOrder.NAME,
-    val sortDirection: SortDirection = SortDirection.ASCENDING
+    val sortDirection: SortDirection = SortDirection.ASCENDING,
+    // Automatic App Updates
+    val lastUpdateCheckMs: Long = 0L,
+    val dismissedUpdateVersionCode: Int = 0
 )
 
 data class PlaybackPersistenceState(
@@ -136,6 +139,9 @@ class PreferencesRepository(private val context: Context) {
         val EQ_VIRTUALIZER = intPreferencesKey("eq_virtualizer")
         val EQ_LOUDNESS = intPreferencesKey("eq_loudness")
         val EQ_PREAMP_DB = floatPreferencesKey("eq_preamp_db")
+
+        val LAST_UPDATE_CHECK_MS = longPreferencesKey("last_update_check_ms")
+        val DISMISSED_UPDATE_VERSION_CODE = intPreferencesKey("dismissed_update_version_code")
     }
 
     val appSettings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -185,7 +191,9 @@ class PreferencesRepository(private val context: Context) {
             sortOrder = prefs[Keys.SORT_ORDER]?.let { runCatching { SortOrder.valueOf(it) }.getOrNull() }
                 ?: SortOrder.NAME,
             sortDirection = prefs[Keys.SORT_DIRECTION]?.let { runCatching { SortDirection.valueOf(it) }.getOrNull() }
-                ?: SortDirection.ASCENDING
+                ?: SortDirection.ASCENDING,
+            lastUpdateCheckMs = prefs[Keys.LAST_UPDATE_CHECK_MS] ?: 0L,
+            dismissedUpdateVersionCode = prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] ?: 0
         )
     }
 
@@ -381,5 +389,13 @@ class PreferencesRepository(private val context: Context) {
             it[Keys.EQ_LOUDNESS] = state.loudnessGainMillibels
             it[Keys.EQ_PREAMP_DB] = state.preampGainDb
         }
+    }
+
+    suspend fun setLastUpdateCheckMs(timestampMs: Long) {
+        context.dataStore.edit { it[Keys.LAST_UPDATE_CHECK_MS] = timestampMs }
+    }
+
+    suspend fun setDismissedUpdateVersionCode(versionCode: Int) {
+        context.dataStore.edit { it[Keys.DISMISSED_UPDATE_VERSION_CODE] = versionCode }
     }
 }

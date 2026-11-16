@@ -44,7 +44,8 @@ class NovaViewModelFactory(
                     repository = container.musicRepository,
                     playerManager = container.audioPlayerManager,
                     equalizerManager = container.equalizerManager,
-                    audioOutputManager = container.audioOutputManager
+                    audioOutputManager = container.audioOutputManager,
+                    updateManager = container.updateManager
                 ) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

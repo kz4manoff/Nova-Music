@@ -1,0 +1,21 @@
+{
+  "latestVersion": "1.0.1",
+  "versionCode": 2,
+  "apkUrl": "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.1/NOVA-MUSIC.apk",
+  "sha256": "",
+  "releaseNotes": "Baseline release featuring iOS 26 Liquid Glass UI, Media3 ExoPlayer engine, 10-band hardware DSP equalizer, and built-in secure automatic update checking.",
+  "mandatoryUpdate": false,
+  "minimumSupportedVersion": 1,
+  "publishedAt": "2026-11-15",
+  "history": [
+    {
+      "version": "1.0.1",
+      "versionCode": 2,
+      "date": "2026-11-15",
+      "mandatory": false,
+      "apkUrl": "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.1/NOVA-MUSIC.apk",
+      "sha256": "",
+      "notes": "Liquid Glass audio player, Media3 ExoPlayer, 10-band hardware EQ, audio output routing, and automatic in-app update support."
+    }
+  ]
+}

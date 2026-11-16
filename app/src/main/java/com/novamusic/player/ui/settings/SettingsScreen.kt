@@ -64,6 +64,7 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.SurroundSound
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.Visibility
@@ -114,6 +115,7 @@ import com.novamusic.player.ui.components.audioOutputIcon
 import com.novamusic.player.ui.components.rememberNovaHaptic
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
+import com.novamusic.player.update.UpdateUiState
 import com.novamusic.player.utils.FormatUtils
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -143,6 +145,7 @@ fun SettingsScreen(
     val totalSongsCount by viewModel.totalSongsCount.collectAsStateWithLifecycle()
     val totalLibraryBytes by viewModel.totalLibraryBytes.collectAsStateWithLifecycle()
     val cacheSizeBytes by viewModel.cacheSizeBytes.collectAsStateWithLifecycle()
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -217,6 +220,39 @@ fun SettingsScreen(
         }
     }
 
+    val checkForUpdatesRow: @Composable () -> Unit = {
+        val updateSubtitle = when (val state = updateState) {
+            is UpdateUiState.Checking -> "Checking GitHub Releases..."
+            is UpdateUiState.Available -> "Version ${state.config.latestVersion} available"
+            is UpdateUiState.Downloading -> "Downloading v${state.config.latestVersion}..."
+            is UpdateUiState.Verifying -> "Verifying APK signature & SHA-256..."
+            is UpdateUiState.ReadyToInstall -> "Ready to install v${state.config.latestVersion}"
+            is UpdateUiState.UpToDate -> "Up to date • v${state.installedVersionName}"
+            is UpdateUiState.Error -> "Check failed • Tap to retry"
+            UpdateUiState.Idle -> "Check GitHub Releases for new NOVA MUSIC builds"
+        }
+        val updateTrailingText = when (val state = updateState) {
+            is UpdateUiState.Available -> "v${state.config.latestVersion}"
+            is UpdateUiState.UpToDate -> "Latest"
+            else -> null
+        }
+        NovaActionSettingRow(
+            icon = Icons.Rounded.SystemUpdate,
+            title = "Check for Updates",
+            subtitle = updateSubtitle,
+            trailingText = updateTrailingText,
+            trailingContent = if (updateState is UpdateUiState.Checking) {
+                { CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = accent) }
+            } else null,
+            onClick = {
+                when (updateState) {
+                    is UpdateUiState.Available -> viewModel.reopenUpdateDialog()
+                    else -> viewModel.checkForUpdates()
+                }
+            }
+        )
+    }
+
     val searchIndex = remember(
         settings,
         eqState,
@@ -228,7 +264,8 @@ fun SettingsScreen(
         cacheSizeBytes,
         cacheClearedBanner,
         historyClearedBanner,
-        currentLanguageLabel
+        currentLanguageLabel,
+        updateState
     ) {
         buildList {
             if (onOpenAudioOutput != null) {
@@ -590,6 +627,7 @@ fun SettingsScreen(
             })
 
             // ABOUT NOVA
+            add(SettingsSearchItem("check_updates", "About NOVA", "Check for Updates", "update version release apk github download", checkForUpdatesRow))
             add(SettingsSearchItem("privacy", "About NOVA", "Privacy Policy", "offline tracking data permissions") {
                 NovaActionSettingRow(
                     icon = Icons.Rounded.Policy,
@@ -1401,6 +1439,8 @@ fun SettingsScreen(
                     NovaSectionHeader(title = "About NOVA", icon = Icons.Rounded.Info)
                     NovaSettingsCard {
                         NovaInfoRow("App Version", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                        NovaSettingsDivider()
+                        checkForUpdatesRow()
                         NovaSettingsDivider()
                         NovaInfoRow("Developer", "kz4man, Mohamed")
                         NovaSettingsDivider()

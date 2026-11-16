@@ -27,6 +27,8 @@ import com.novamusic.player.data.preferences.AppSettings
 import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.database.entities.CustomPresetEntity
+import com.novamusic.player.update.UpdateManager
+import com.novamusic.player.update.UpdateUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,7 +46,8 @@ class SettingsViewModel(
     private val repository: MusicRepository,
     private val playerManager: AudioPlayerManager,
     private val equalizerManager: EqualizerManager,
-    private val audioOutputManager: AudioOutputManager
+    private val audioOutputManager: AudioOutputManager,
+    private val updateManager: UpdateManager
 ) : ViewModel() {
 
     val appSettings: StateFlow<AppSettings> = preferences.appSettings
@@ -58,6 +61,7 @@ class SettingsViewModel(
     val isScanning: StateFlow<Boolean> = repository.isScanning
     val playerState: StateFlow<PlayerUiState> = playerManager.playerState
     val audioRoutingState: StateFlow<AudioRoutingUiState> = audioOutputManager.routingState
+    val updateState: StateFlow<UpdateUiState> = updateManager.uiState
 
     val availableFolders: StateFlow<List<MusicFolder>> = repository.availableFolders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -266,5 +270,14 @@ class SettingsViewModel(
 
     fun setNotificationAppearance(appearance: NotificationAppearance) {
         viewModelScope.launch { preferences.setNotificationAppearance(appearance) }
+    }
+
+    // 7. App Updates
+    fun checkForUpdates() {
+        updateManager.checkForUpdatesManual()
+    }
+
+    fun reopenUpdateDialog() {
+        updateManager.reopenAvailableDialog()
     }
 }

@@ -9,6 +9,7 @@ import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.data.scanner.MusicScanner
 import com.novamusic.player.database.NovaDatabase
+import com.novamusic.player.update.UpdateManager
 
 class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
@@ -25,6 +26,10 @@ class AppContainer(context: Context) {
     val audioPlayerManager: AudioPlayerManager = AudioPlayerManager(
         context = appContext,
         repository = musicRepository,
+        preferences = preferencesRepository
+    )
+    val updateManager: UpdateManager = UpdateManager(
+        context = appContext,
         preferences = preferencesRepository
     )
 }

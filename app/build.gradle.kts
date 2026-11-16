@@ -29,8 +29,20 @@ val hasReleaseSigning = !releaseStorePath.isNullOrBlank() &&
     !releaseKeyPassword.isNullOrBlank() &&
     rootProject.file(releaseStorePath).exists()
 
+val resolvedVersionCode = (findProperty("NOVA_VERSION_CODE") as String?)?.toIntOrNull()
+    ?: System.getenv("NOVA_VERSION_CODE")?.toIntOrNull()
+    ?: 2
+
+val resolvedVersionName = (findProperty("NOVA_VERSION_NAME") as String?)?.takeIf { it.isNotBlank() }
+    ?: System.getenv("NOVA_VERSION_NAME")?.takeIf { it.isNotBlank() }
+    ?: "1.0.1"
+
+val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?)?.takeIf { it.isNotBlank() }
+    ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }
+    ?: "https://ais-pre-fccubiaae4scsqk2lwfztq-340478514048.europe-west2.run.app/update.json"
+
 base {
-    archivesName.set("NOVA-MUSIC-v1.0.0")
+    archivesName.set("NOVA-MUSIC-v$resolvedVersionName")
 }
 
 android {
@@ -41,8 +53,10 @@ android {
         applicationId = "com.novamusic.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = resolvedVersionCode
+        versionName = resolvedVersionName
+
+        buildConfigField("String", "UPDATE_CONFIG_URL", "\"$resolvedUpdateConfigUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -96,6 +110,10 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     lint {

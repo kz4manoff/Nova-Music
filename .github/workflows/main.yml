@@ -1,54 +1,233 @@
-name: Build NOVA MUSIC APK
+name: NOVA MUSIC Android CI & Release
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Optional semantic version override (e.g., 1.0.2)'
+        required: false
+        type: string
+      release_version_code:
+        description: 'Optional integer versionCode override'
+        required: false
+        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  test-and-build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup Java
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Check Android SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la "$ANDROID_HOME"
-          ls -la "$ANDROID_HOME/platforms" || true
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
 
-      - name: Check Project
+      - name: Run Android Unit Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Resolve release version metadata
+        id: version
+        shell: bash
         run: |
-          ls -la
-          ls -la app
+          IS_TAG=false
+          TAG_NAME=""
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            IS_TAG=true
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            VERSION_NAME="${TAG_NAME#v}"
+          elif [[ -n "${{ inputs.release_version }}" ]]; then
+            VERSION_NAME="${{ inputs.release_version#v }}"
+          else
+            VERSION_NAME=$(grep -E 'System\.getenv\("NOVA_VERSION_NAME"\)' -A1 app/build.gradle.kts | tail -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          fi
 
-      - name: Build APK
-        run: gradle assembleDebug --stacktrace
+          if ! [[ "${VERSION_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid versionName '${VERSION_NAME}'. Expected format like 1.0.2 (tag v1.0.2)."
+            exit 1
+          fi
 
-      - name: Find APK
-        run: find app/build/outputs/apk -name "*.apk"
+          GRADLE_CODE=$(grep -E 'System\.getenv\("NOVA_VERSION_CODE"\)' -A1 app/build.gradle.kts | tail -n1 | tr -dc '0-9')
+          GRADLE_CODE=${GRADLE_CODE:-2}
 
-      - name: Upload APK
+          JSON_CODE=0
+          JSON_VER=""
+          if [[ -f public/update.json ]]; then
+            JSON_CODE=$(python3 -c 'import json; d=json.load(open("public/update.json")); print(int(d.get("versionCode", 0)))')
+            JSON_VER=$(python3 -c 'import json; d=json.load(open("public/update.json")); print(str(d.get("latestVersion", "")))')
+          fi
+
+          TAG_COUNT=$(git tag -l 'v*' | wc -l | tr -d ' ')
+          TAG_COUNT=${TAG_COUNT:-0}
+
+          if [[ -n "${{ inputs.release_version_code }}" ]]; then
+            VERSION_CODE="${{ inputs.release_version_code }}"
+          elif [[ "${IS_TAG}" == "true" ]]; then
+            CANDIDATE=${GRADLE_CODE}
+            if [[ "${VERSION_NAME}" != "${JSON_VER}" ]] && (( JSON_CODE >= CANDIDATE )); then
+              CANDIDATE=$((JSON_CODE + 1))
+            fi
+            TAG_MIN=$((TAG_COUNT + 1))
+            if (( TAG_MIN > CANDIDATE )); then
+              CANDIDATE=${TAG_MIN}
+            fi
+            VERSION_CODE=${CANDIDATE}
+          else
+            VERSION_CODE=${GRADLE_CODE}
+          fi
+
+          echo "is_tag=${IS_TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "Resolved NOVA MUSIC v${VERSION_NAME} (versionCode=${VERSION_CODE}, is_tag=${IS_TAG})"
+
+      - name: Validate release signing secrets
+        id: signing
+        shell: bash
+        env:
+          HAS_KEYSTORE: ${{ secrets.NOVA_KEYSTORE_BASE64 != '' }}
+          HAS_STORE_PASS: ${{ secrets.NOVA_KEYSTORE_PASSWORD != '' }}
+          HAS_KEY_ALIAS: ${{ secrets.NOVA_KEY_ALIAS != '' }}
+          HAS_KEY_PASS: ${{ secrets.NOVA_KEY_PASSWORD != '' }}
+        run: |
+          MISSING=()
+          [[ "${HAS_KEYSTORE}" != "true" ]] && MISSING+=("NOVA_KEYSTORE_BASE64")
+          [[ "${HAS_STORE_PASS}" != "true" ]] && MISSING+=("NOVA_KEYSTORE_PASSWORD")
+          [[ "${HAS_KEY_ALIAS}" != "true" ]] && MISSING+=("NOVA_KEY_ALIAS")
+          [[ "${HAS_KEY_PASS}" != "true" ]] && MISSING+=("NOVA_KEY_PASSWORD")
+
+          if (( ${#MISSING[@]} > 0 )); then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            MSG="Missing GitHub Actions release signing secret(s): ${MISSING[*]}. Configure all 4 secrets in GitHub Repository Settings -> Secrets and variables -> Actions. Unsigned APKs cannot perform in-place app updates."
+            if [[ "${{ steps.version.outputs.is_tag }}" == "true" ]]; then
+              echo "::error::${MSG}"
+              exit 1
+            else
+              echo "::warning::${MSG}"
+            fi
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decode production keystore
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        env:
+          NOVA_KEYSTORE_BASE64: ${{ secrets.NOVA_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$NOVA_KEYSTORE_BASE64" | base64 --decode > "${GITHUB_WORKSPACE}/nova-release.jks"
+          chmod 600 "${GITHUB_WORKSPACE}/nova-release.jks"
+
+      - name: Build signed Release APK
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          NOVA_KEYSTORE_PATH: nova-release.jks
+          NOVA_KEYSTORE_PASSWORD: ${{ secrets.NOVA_KEYSTORE_PASSWORD }}
+          NOVA_KEY_ALIAS: ${{ secrets.NOVA_KEY_ALIAS }}
+          NOVA_KEY_PASSWORD: ${{ secrets.NOVA_KEY_PASSWORD }}
+          NOVA_VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          NOVA_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Package & verify Release APK + SHA-256
+        id: package
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          APK_SOURCE=$(find app/build/outputs/apk/release -name "*.apk" ! -name "*unsigned*" | head -n 1)
+          if [[ -z "${APK_SOURCE}" || ! -f "${APK_SOURCE}" ]]; then
+            echo "::error::Signed release APK was not produced. Refusing to continue with an unsigned APK."
+            exit 1
+          fi
+
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -name "apksigner" | sort -V | tail -n 1)
+          if [[ -n "${APKSIGNER}" ]]; then
+            "${APKSIGNER}" verify --print-certs "${APK_SOURCE}"
+          fi
+
+          mkdir -p release-artifacts
+          cp "${APK_SOURCE}" "release-artifacts/NOVA-MUSIC.apk"
+          SHA256=$(sha256sum "release-artifacts/NOVA-MUSIC.apk" | awk '{print $1}')
+          echo "${SHA256}  NOVA-MUSIC.apk" > "release-artifacts/NOVA-MUSIC.apk.sha256"
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+
+          echo "### Signed Release Artifact" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: \`${{ steps.version.outputs.version_name }}\` (\`versionCode: ${{ steps.version.outputs.version_code }}\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SHA-256**: \`${SHA256}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup keystore from runner
+        if: always()
+        shell: bash
+        run: rm -f "${GITHUB_WORKSPACE}/nova-release.jks"
+
+      - name: Upload signed NOVA-MUSIC.apk artifact
+        if: steps.signing.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: NOVA-MUSIC-APK
+          name: NOVA-MUSIC-release-v${{ steps.version.outputs.version_name }}
+          path: |
+            release-artifacts/NOVA-MUSIC.apk
+            release-artifacts/NOVA-MUSIC.apk.sha256
+          if-no-files-found: error
+
+      - name: Build Debug APK check (when signing secrets are not yet configured on main)
+        if: steps.signing.outputs.ready != 'true' && steps.version.outputs.is_tag != 'true'
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload Debug APK artifact (non-release CI check)
+        if: steps.signing.outputs.ready != 'true' && steps.version.outputs.is_tag != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NOVA-MUSIC-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: steps.version.outputs.is_tag == 'true' && steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NOVA MUSIC v${{ steps.version.outputs.version_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            release-artifacts/NOVA-MUSIC.apk
+            release-artifacts/NOVA-MUSIC.apk.sha256
+          body: |
+            ## NOVA MUSIC v${{ steps.version.outputs.version_name }} (Build ${{ steps.version.outputs.version_code }})
+
+            ### Integrity Verification
+            - **APK File**: `NOVA-MUSIC.apk`
+            - **SHA-256**: `${{ steps.package.outputs.sha256 }}`
+
+            ### Website `public/update.json` Configuration
+            ```json
+            {
+              "latestVersion": "${{ steps.version.outputs.version_name }}",
+              "versionCode": ${{ steps.version.outputs.version_code }},
+              "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/NOVA-MUSIC.apk",
+              "sha256": "${{ steps.package.outputs.sha256 }}",
+              "mandatoryUpdate": false,
+              "minimumSupportedVersion": 1
+            }
+            ```

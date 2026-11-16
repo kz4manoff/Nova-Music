@@ -54,6 +54,7 @@ import com.novamusic.player.permissions.PermissionHelper
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassButton
 import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.NovaUpdateDialog
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.ui.theme.NovaMusicTheme
 import com.novamusic.player.ui.theme.rememberArtworkPalette
@@ -80,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         container.audioPlayerManager.connect()
+        container.updateManager.startPeriodicChecks()
 
         if (hasAudioPermissionState) {
             initializeLibraryAndRestore(container)
@@ -90,6 +92,8 @@ class MainActivity : AppCompatActivity() {
             val settings by container.preferencesRepository.appSettings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
             val playerState by container.audioPlayerManager.playerState
+                .collectAsStateWithLifecycle()
+            val updateState by container.updateManager.uiState
                 .collectAsStateWithLifecycle()
 
             LaunchedEffect(settings.keepScreenOn) {
@@ -128,6 +132,12 @@ class MainActivity : AppCompatActivity() {
                     container.audioOutputManager.refreshPermissionsAndDevices()
                 }
 
+                val installPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) { _ ->
+                    container.updateManager.onInstallPermissionReturned()
+                }
+
                 if (hasAudioPermissionState) {
                     NovaMainAppShell(
                         container = container,
@@ -150,6 +160,19 @@ class MainActivity : AppCompatActivity() {
                         }
                     )
                 }
+
+                NovaUpdateDialog(
+                    state = updateState,
+                    onUpdateNow = { container.updateManager.startDownload() },
+                    onCancelDownload = { container.updateManager.cancelDownload() },
+                    onRequestInstallPermission = {
+                        installPermissionLauncher.launch(
+                            container.updateManager.buildInstallPermissionIntent()
+                        )
+                    },
+                    onRetryCheck = { container.updateManager.checkForUpdatesManual() },
+                    onDismiss = { container.updateManager.dismissDialog() }
+                )
             }
         }
     }
@@ -158,6 +181,10 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val container = (application as NovaMusicApplication).container
         container.audioOutputManager.refreshPermissionsAndDevices()
+        container.updateManager.onInstallPermissionReturned()
+        lifecycleScope.launch {
+            container.updateManager.checkIfIntervalElapsed()
+        }
         val grantedNow = PermissionHelper.hasAudioPermission(this)
         if (grantedNow && !hasAudioPermissionState) {
             hasAudioPermissionState = true

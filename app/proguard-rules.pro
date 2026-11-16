@@ -36,3 +36,6 @@
 # Coil Image Loading
 -keep class coil.** { *; }
 -dontwarn coil.**
+
+# In-App Updater
+-keep class com.novamusic.player.update.** { *; }
