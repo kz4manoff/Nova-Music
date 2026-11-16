@@ -72,13 +72,6 @@ jobs:
           GRADLE_CODE=$(grep -E 'System\.getenv\("NOVA_VERSION_CODE"\)' -A1 app/build.gradle.kts | tail -n1 | tr -dc '0-9')
           GRADLE_CODE=${GRADLE_CODE:-2}
 
-          JSON_CODE=0
-          JSON_VER=""
-          if [[ -f public/update.json ]]; then
-            JSON_CODE=$(python3 -c 'import json; d=json.load(open("public/update.json")); print(int(d.get("versionCode", 0)))')
-            JSON_VER=$(python3 -c 'import json; d=json.load(open("public/update.json")); print(str(d.get("latestVersion", "")))')
-          fi
-
           TAG_COUNT=$(git tag -l 'v*' | wc -l | tr -d ' ')
           TAG_COUNT=${TAG_COUNT:-0}
 
@@ -86,9 +79,6 @@ jobs:
             VERSION_CODE="${INPUT_RELEASE_VERSION_CODE}"
           elif [[ "${IS_TAG}" == "true" ]]; then
             CANDIDATE=${GRADLE_CODE}
-            if [[ "${VERSION_NAME}" != "${JSON_VER}" ]] && (( JSON_CODE >= CANDIDATE )); then
-              CANDIDATE=$((JSON_CODE + 1))
-            fi
             TAG_MIN=$((TAG_COUNT + 1))
             if (( TAG_MIN > CANDIDATE )); then
               CANDIDATE=${TAG_MIN}
@@ -227,13 +217,14 @@ jobs:
             - **APK File**: `NOVA-MUSIC.apk`
             - **SHA-256**: `${{ steps.package.outputs.sha256 }}`
 
-            ### Website `public/update.json` Configuration
+            ### Website (`kz4manoff/Nova-Website`) `public/update.json` Configuration
             ```json
             {
               "latestVersion": "${{ steps.version.outputs.version_name }}",
               "versionCode": ${{ steps.version.outputs.version_code }},
               "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/NOVA-MUSIC.apk",
               "sha256": "${{ steps.package.outputs.sha256 }}",
+              "releaseNotes": "Performance improvements and bug fixes.",
               "mandatoryUpdate": false,
               "minimumSupportedVersion": 1
             }

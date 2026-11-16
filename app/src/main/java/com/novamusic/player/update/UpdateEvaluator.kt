@@ -126,8 +126,9 @@ object UpdateEvaluator {
             }
             val parsed = JsonReader(trimmed).parseRootObject()
 
-            val latestVersion = parsed["latestVersion"] as? String
+            val latestVersionRaw = parsed["latestVersion"] as? String
                 ?: throw IllegalArgumentException("Missing 'latestVersion' field.")
+            val latestVersion = latestVersionRaw.trim().removePrefix("v").removePrefix("V")
             val versionCodeNum = parsed["versionCode"] as? Number
                 ?: throw IllegalArgumentException("Missing 'versionCode' field.")
             val versionCode = versionCodeNum.toInt()
@@ -146,7 +147,7 @@ object UpdateEvaluator {
             val minimumSupportedVersion = minSupportedNum?.toInt() ?: 1
 
             RemoteUpdateConfig(
-                latestVersion = latestVersion.trim(),
+                latestVersion = latestVersion,
                 versionCode = versionCode,
                 apkUrl = apkUrl.trim(),
                 sha256 = sha256,

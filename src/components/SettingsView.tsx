@@ -1,41 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Check,
-  Download,
-  ExternalLink,
-  FileJson,
-  History,
   Moon,
   Palette,
-  ShieldCheck,
   SlidersHorizontal,
   Sun,
   Timer,
 } from 'lucide-react';
 import { ACCENT_OPTIONS, AccentOption, ArtworkStyle, ThemeMode } from '../data/novaLibrary';
 import { LiquidGlassButton, LiquidGlassCard } from './LiquidGlass';
-
-interface UpdateHistoryItem {
-  version: string;
-  versionCode: number;
-  date?: string;
-  mandatory?: boolean;
-  apkUrl?: string;
-  sha256?: string;
-  notes: string;
-}
-
-interface UpdateConfigManifest {
-  latestVersion: string;
-  versionCode: number;
-  apkUrl: string;
-  sha256?: string;
-  releaseNotes: string;
-  mandatoryUpdate: boolean;
-  minimumSupportedVersion: number;
-  publishedAt?: string;
-  history?: UpdateHistoryItem[];
-}
 
 interface SettingsViewProps {
   theme: ThemeMode;
@@ -72,27 +45,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   ];
 
   const sleepOptions: (number | null)[] = [null, 15, 30, 60];
-
-  const [updateManifest, setUpdateManifest] = useState<UpdateConfigManifest | null>(null);
-  const [manifestError, setManifestError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    fetch('/update.json', { cache: 'no-store' })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<UpdateConfigManifest>;
-      })
-      .then((data) => {
-        if (active) setUpdateManifest(data);
-      })
-      .catch(() => {
-        if (active) setManifestError('Unable to load /update.json manifest.');
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   return (
     <div className="space-y-5">
@@ -271,142 +223,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>Open 10-Band Equalizer DSP</span>
           </LiquidGlassButton>
         </div>
-      </LiquidGlassCard>
-      {/* Android Releases & Update Feed */}
-      <LiquidGlassCard highlighted accentHex={accent.hex} className="space-y-4 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="h-5 w-5" style={{ color: accent.hex }} />
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                NOVA MUSIC for Android — Releases
-              </h3>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                Powered directly by <code className="font-mono">/update.json</code> &amp; GitHub Releases
-              </p>
-            </div>
-          </div>
-
-          <a
-            href="/update.json"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-slate-900/10 bg-slate-900/5 px-3 py-1.5 font-mono text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-900/10 dark:border-white/15 dark:bg-white/[0.06] dark:text-slate-200 dark:hover:bg-white/10"
-          >
-            <FileJson className="h-3.5 w-3.5" style={{ color: accent.hex }} />
-            <span>update.json</span>
-            <ExternalLink className="h-3 w-3 opacity-70" />
-          </a>
-        </div>
-
-        {manifestError && (
-          <p className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">
-            {manifestError}
-          </p>
-        )}
-
-        {updateManifest && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-900/10 bg-slate-900/[0.04] p-4 dark:border-white/10 dark:bg-white/[0.04]">
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-base font-bold text-slate-900 dark:text-white">
-                    v{updateManifest.latestVersion}
-                  </span>
-                  <span
-                    style={{ backgroundColor: `${accent.hex}24`, color: accent.hex }}
-                    className="rounded-lg px-2 py-0.5 font-mono text-[11px] font-bold"
-                  >
-                    BUILD {updateManifest.versionCode}
-                  </span>
-                  {updateManifest.mandatoryUpdate && (
-                    <span className="rounded-lg bg-rose-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-rose-400">
-                      REQUIRED
-                    </span>
-                  )}
-                </div>
-                {updateManifest.publishedAt && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Released {updateManifest.publishedAt} · Min supported build {updateManifest.minimumSupportedVersion}
-                  </p>
-                )}
-              </div>
-
-              <a
-                href={updateManifest.apkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  background: `linear-gradient(135deg, ${accent.glow}, ${accent.hex}, ${accent.deep})`,
-                  boxShadow: `0 10px 26px -8px ${accent.hex}88, inset 0 1px 0 rgba(255,255,255,0.45)`,
-                }}
-                className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-white/40 px-4 py-2.5 text-sm font-semibold text-[#0B0C10] transition-transform active:scale-95"
-              >
-                <Download className="h-4 w-4" />
-                <span>Download APK (v{updateManifest.latestVersion})</span>
-              </a>
-            </div>
-
-            <div className="rounded-2xl border border-slate-900/10 bg-slate-900/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Release Notes
-              </p>
-              <p className="mt-1.5 whitespace-pre-line text-sm text-slate-700 dark:text-slate-200">
-                {updateManifest.releaseNotes}
-              </p>
-              <div className="mt-3 border-t border-slate-900/10 pt-2.5 dark:border-white/10">
-                <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400 break-all">
-                  SHA-256:{' '}
-                  {updateManifest.sha256 && updateManifest.sha256.trim().length === 64
-                    ? updateManifest.sha256
-                    : 'Generated automatically on signed GitHub Release build'}
-                </p>
-              </div>
-            </div>
-
-            {updateManifest.history && updateManifest.history.length > 0 && (
-              <div className="space-y-2.5">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <History className="h-3.5 w-3.5" style={{ color: accent.hex }} />
-                  <span>Update History</span>
-                </div>
-                <div className="space-y-2">
-                  {updateManifest.history.map((entry) => (
-                    <div
-                      key={`${entry.version}-${entry.versionCode}`}
-                      className="rounded-2xl border border-slate-900/10 bg-slate-900/[0.03] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
-                          v{entry.version} (Build {entry.versionCode})
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {entry.date && (
-                            <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                              {entry.date}
-                            </span>
-                          )}
-                          {entry.apkUrl && (
-                            <a
-                              href={entry.apkUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: accent.hex }}
-                              className="text-xs font-semibold hover:underline"
-                            >
-                              APK
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{entry.notes}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </LiquidGlassCard>
     </div>
   );
