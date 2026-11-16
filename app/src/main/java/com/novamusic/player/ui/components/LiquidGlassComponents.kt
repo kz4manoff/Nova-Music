@@ -121,7 +121,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -944,9 +943,9 @@ private fun FloatingFrostedGlassContainer(
 
 /**
  * Floating iOS Liquid Glass Rounded Rectangular Bottom Navigation Bar featuring:
- * - Five evenly spaced destinations with white minimalist icons & small white labels underneath
- * - Subtle circular glass highlight smoothly tracking the active icon
- * - Continuous horizontal finger-tracking swipe and tap gesture support
+ * - Five evenly spaced minimalist white icons with no text labels
+ * - Larger horizontal rounded-rectangle (pill-shaped) dark glass active indicator with thin white border
+ * - Smooth spring-driven sliding transition and continuous horizontal finger-tracking swipe/tap support
  */
 @Composable
 fun LiquidGlassTabBar(
@@ -988,22 +987,22 @@ fun LiquidGlassTabBar(
         targetValue = dragSlot ?: selectedIndex.toFloat(),
         animationSpec = when {
             dragSlot != null || reducedMotion -> snap()
-            animStyle == PlayerAnimationStyle.MINIMAL -> tween(170, easing = FastOutSlowInEasing)
-            else -> spring(dampingRatio = 0.74f, stiffness = 420f)
+            animStyle == PlayerAnimationStyle.MINIMAL -> tween(180, easing = FastOutSlowInEasing)
+            else -> spring(dampingRatio = 0.78f, stiffness = 380f)
         },
         label = "lg_pill_indicator_slot"
     )
 
     val animatedVelocityX by animateFloatAsState(
         targetValue = dragVelocityX,
-        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.74f, stiffness = 480f),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.76f, stiffness = 460f),
         label = "lg_pill_vel_stretch"
     )
 
     val barHeight = when (navBarAppearance) {
-        NavBarAppearance.FLOATING_GLASS -> 64.dp
-        NavBarAppearance.COMPACT -> 60.dp
-        NavBarAppearance.MINIMAL_PILL -> 58.dp
+        NavBarAppearance.FLOATING_GLASS -> 56.dp
+        NavBarAppearance.COMPACT -> 52.dp
+        NavBarAppearance.MINIMAL_PILL -> 50.dp
     }
     val barShape = RoundedCornerShape(26.dp)
     val horizontalInset = 16.dp
@@ -1026,66 +1025,83 @@ fun LiquidGlassTabBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(barHeight)
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .padding(horizontal = 6.dp, vertical = 6.dp)
             ) {
                 val count = tabs.size.coerceAtLeast(1)
                 val tabWidth = maxWidth / count
                 val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
-                val innerPadPx = with(density) { 8.dp.toPx() }
-                val circleSize = 35.dp
-                val circleSizePx = with(density) { circleSize.toPx() }
+                val innerPadPx = with(density) { 6.dp.toPx() }
+                val indicatorHeight = minOf(38.dp, (maxHeight - 4.dp).coerceAtLeast(32.dp))
+                val indicatorWidth = (tabWidth - 2.dp).coerceAtLeast(48.dp)
+                val indicatorWidthPx = with(density) { indicatorWidth.toPx() }
+                val indicatorShape = RoundedCornerShape(20.dp)
 
                 val isDragging = dragSlot != null
                 val travelDelta = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
                     0f
                 } else {
                     val settleDist = if (isDragging) 0f else abs(selectedIndex.toFloat() - indicatorSlot)
-                    val velStretch = (abs(animatedVelocityX) / 1600f).coerceIn(0f, 0.85f)
-                    (settleDist * 0.45f + velStretch * 0.55f).coerceIn(0f, 0.9f)
+                    val velStretch = (abs(animatedVelocityX) / 1700f).coerceIn(0f, 0.75f)
+                    (settleDist * 0.35f + velStretch * 0.45f).coerceIn(0f, 0.75f)
                 }
-                val highlightScaleX = 1f + travelDelta * 0.14f
-                val highlightScaleY = 1f - travelDelta * 0.05f
-                val circleX = indicatorSlot * tabWidthPx + (tabWidthPx - circleSizePx) / 2f
+                val highlightScaleX = 1f + travelDelta * 0.09f
+                val highlightScaleY = 1f - travelDelta * 0.04f
+                val indicatorX = indicatorSlot * tabWidthPx + (tabWidthPx - indicatorWidthPx) / 2f
 
-                // Subtle circular glass highlight gliding cleanly behind the active icon
+                // Horizontal pill-shaped dark glass active indicator smoothly sliding behind icons
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .size(circleSize)
+                        .align(Alignment.CenterStart)
+                        .width(indicatorWidth)
+                        .height(indicatorHeight)
                         .graphicsLayer {
-                            translationX = circleX
+                            translationX = indicatorX
                             scaleX = highlightScaleX
                             scaleY = highlightScaleY
                         }
-                        .clip(CircleShape)
+                        .clip(indicatorShape)
                         .background(
-                            Brush.radialGradient(
+                            Brush.verticalGradient(
                                 colors = if (isLight) {
                                     listOf(
                                         Color.White.copy(alpha = 0.96f),
-                                        Color.White.copy(alpha = 0.72f)
+                                        Color.White.copy(alpha = 0.76f)
                                     )
                                 } else {
                                     listOf(
-                                        Color.White.copy(alpha = 0.22f),
-                                        Color.White.copy(alpha = 0.10f)
+                                        Color(0xCC252834),
+                                        Color(0xD915171F),
+                                        Color(0xE60D0F14)
                                     )
                                 }
                             )
                         )
+                        .drawBehind {
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = if (isLight) 0.40f else 0.10f),
+                                        Color.Transparent
+                                    ),
+                                    startY = 0f,
+                                    endY = size.height * 0.45f
+                                )
+                            )
+                        }
                         .border(
-                            width = 0.75.dp,
+                            width = 0.85.dp,
                             brush = Brush.linearGradient(
                                 colors = if (isLight) {
-                                    listOf(Color.White, Color(0x260F172A))
+                                    listOf(Color.White, Color(0x280F172A))
                                 } else {
                                     listOf(
-                                        Color.White.copy(alpha = 0.42f),
-                                        Color.White.copy(alpha = 0.10f)
+                                        Color.White.copy(alpha = 0.36f),
+                                        Color.White.copy(alpha = 0.12f),
+                                        Color.White.copy(alpha = 0.22f)
                                     )
                                 }
                             ),
-                            shape = CircleShape
+                            shape = indicatorShape
                         )
                 )
 
@@ -1193,7 +1209,7 @@ fun LiquidGlassTabBar(
                                 dragVelocityX = 0f
                             }
                         },
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     tabs.forEachIndexed { index, tab ->
                         val proximity = iconProximityWeight(indicatorSlot, index)
@@ -1205,25 +1221,20 @@ fun LiquidGlassTabBar(
                         }
                         val baseForeground = if (isLight) Color(0xFF0E121B) else Color.White
                         val iconTint = baseForeground.copy(alpha = 0.62f + proximity * 0.38f)
-                        val labelTint = baseForeground.copy(alpha = 0.56f + proximity * 0.44f)
 
-                        Column(
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Top
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier.size(circleSize),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            Box(contentAlignment = Alignment.TopEnd) {
                                 Icon(
                                     imageVector = tab.icon,
                                     contentDescription = tab.label,
                                     tint = iconTint,
                                     modifier = Modifier
-                                        .size(20.dp)
+                                        .size(22.dp)
                                         .graphicsLayer {
                                             scaleX = iconScale
                                             scaleY = iconScale
@@ -1232,8 +1243,6 @@ fun LiquidGlassTabBar(
                                 if (tab.hasBadge) {
                                     Box(
                                         modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(top = 6.dp, end = 6.dp)
                                             .size(6.5.dp)
                                             .clip(CircleShape)
                                             .background(MaterialTheme.colorScheme.primary)
@@ -1241,19 +1250,6 @@ fun LiquidGlassTabBar(
                                     )
                                 }
                             }
-
-                            Text(
-                                text = tab.label,
-                                color = labelTint,
-                                fontSize = 10.sp,
-                                lineHeight = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                                letterSpacing = 0.1.sp,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center
-                            )
                         }
                     }
                 }
