@@ -48,6 +48,10 @@ class AndroidUpdateNetworkClient(
             if (code !in 200..299) {
                 throw IOException("Update server returned HTTP $code")
             }
+            val contentType = conn.contentType?.lowercase().orEmpty()
+            if (contentType.contains("text/html")) {
+                throw IOException("Update manifest not found at $url (received HTML page instead of JSON).")
+            }
             val contentLength = conn.contentLengthLong
             if (contentLength > UpdateConfig.MAX_MANIFEST_BYTES) {
                 throw IOException("Update manifest exceeds maximum allowed size.")

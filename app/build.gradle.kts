@@ -39,7 +39,7 @@ val resolvedVersionName = (findProperty("NOVA_VERSION_NAME") as String?)?.takeIf
 
 val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }
-    ?: "https://ais-pre-fccubiaae4scsqk2lwfztq-340478514048.europe-west2.run.app/update.json"
+    ?: "https://nova-website-1tg.pages.dev/update.json"
 
 base {
     archivesName.set("NOVA-MUSIC-v$resolvedVersionName")
