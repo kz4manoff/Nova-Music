@@ -45,8 +45,14 @@ class AndroidUpdateNetworkClient(
         val conn = openSecureConnection(url, allowRedirects = false)
         try {
             val code = conn.responseCode
+            if (code == HttpURLConnection.HTTP_NOT_FOUND) {
+                throw IOException("Update manifest not found on server (HTTP 404).")
+            }
+            if (code in 500..599) {
+                throw IOException("Update server is temporarily unavailable (HTTP $code).")
+            }
             if (code !in 200..299) {
-                throw IOException("Update server returned HTTP $code")
+                throw IOException("Update server returned HTTP $code.")
             }
             val contentType = conn.contentType?.lowercase().orEmpty()
             if (contentType.contains("text/html")) {

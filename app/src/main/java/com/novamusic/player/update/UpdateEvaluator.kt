@@ -126,30 +126,77 @@ object UpdateEvaluator {
             }
             val parsed = JsonReader(trimmed).parseRootObject()
 
-            val latestVersionRaw = parsed["latestVersion"] as? String
-                ?: throw IllegalArgumentException("Missing 'latestVersion' field.")
+            val latestVersionRaw = when {
+                parsed.containsKey("latestVersion") && parsed["latestVersion"] != null ->
+                    parsed["latestVersion"] as? String
+                        ?: throw IllegalArgumentException("Invalid 'latestVersion' field: expected string.")
+                parsed.containsKey("versionName") && parsed["versionName"] != null ->
+                    parsed["versionName"] as? String
+                        ?: throw IllegalArgumentException("Invalid 'versionName' field: expected string.")
+                else -> throw IllegalArgumentException("Missing required 'latestVersion' (or 'versionName') field.")
+            }
             val latestVersion = latestVersionRaw.trim().removePrefix("v").removePrefix("V")
-            val versionCodeNum = parsed["versionCode"] as? Number
-                ?: throw IllegalArgumentException("Missing 'versionCode' field.")
-            val versionCode = versionCodeNum.toInt()
-            if (versionCode <= 0) {
-                throw IllegalArgumentException("Invalid 'versionCode': $versionCode")
+            if (latestVersion.isBlank()) {
+                throw IllegalArgumentException("Missing required 'latestVersion' (or 'versionName') field.")
             }
 
-            val apkUrl = parsed["apkUrl"] as? String
-                ?: throw IllegalArgumentException("Missing 'apkUrl' field.")
-            val sha256 = (parsed["sha256"] as? String).orEmpty().trim()
-            val releaseNotes = (parsed["releaseNotes"] as? String)
-                ?.takeIf { it.isNotBlank() }
-                ?: "Bug fixes and performance improvements."
-            val mandatoryUpdate = parsed["mandatoryUpdate"] as? Boolean ?: false
-            val minSupportedNum = parsed["minimumSupportedVersion"] as? Number
-            val minimumSupportedVersion = minSupportedNum?.toInt() ?: 1
+            if (!parsed.containsKey("versionCode") || parsed["versionCode"] == null) {
+                throw IllegalArgumentException("Missing required 'versionCode' field.")
+            }
+            val versionCodeNum = parsed["versionCode"] as? Number
+                ?: throw IllegalArgumentException("Invalid 'versionCode' field: expected integer.")
+            if (versionCodeNum is Double || versionCodeNum is Float) {
+                throw IllegalArgumentException("Invalid 'versionCode' field: expected integer.")
+            }
+            val versionCode = versionCodeNum.toInt()
+            if (versionCode < 0) {
+                throw IllegalArgumentException("Invalid 'versionCode': $versionCode (must be 0 or greater).")
+            }
+
+            if (!parsed.containsKey("apkUrl") || parsed["apkUrl"] == null) {
+                throw IllegalArgumentException("Missing required 'apkUrl' field.")
+            }
+            val apkUrlRaw = parsed["apkUrl"] as? String
+                ?: throw IllegalArgumentException("Invalid 'apkUrl' field: expected string.")
+            val apkUrl = apkUrlRaw.trim()
+            if (apkUrl.isBlank()) {
+                throw IllegalArgumentException("Missing required 'apkUrl' field.")
+            }
+
+            val sha256 = when (val rawSha = parsed["sha256"]) {
+                null -> ""
+                is String -> rawSha.trim()
+                else -> throw IllegalArgumentException("Invalid 'sha256' field: expected string.")
+            }
+
+            val releaseNotes = when (val rawNotes = parsed["releaseNotes"]) {
+                null -> "Bug fixes and performance improvements."
+                is String -> rawNotes.takeIf { it.isNotBlank() } ?: "Bug fixes and performance improvements."
+                else -> throw IllegalArgumentException("Invalid 'releaseNotes' field: expected string.")
+            }
+
+            val mandatoryUpdate = when {
+                parsed.containsKey("mandatoryUpdate") && parsed["mandatoryUpdate"] != null ->
+                    parsed["mandatoryUpdate"] as? Boolean
+                        ?: throw IllegalArgumentException("Invalid 'mandatoryUpdate' field: expected boolean.")
+                parsed.containsKey("mandatory") && parsed["mandatory"] != null ->
+                    parsed["mandatory"] as? Boolean
+                        ?: throw IllegalArgumentException("Invalid 'mandatory' field: expected boolean.")
+                else -> false
+            }
+
+            val minimumSupportedVersion = when (val rawMin = parsed["minimumSupportedVersion"]) {
+                null -> 1
+                is Long -> rawMin.toInt()
+                is Int -> rawMin
+                is Number -> throw IllegalArgumentException("Invalid 'minimumSupportedVersion' field: expected integer.")
+                else -> throw IllegalArgumentException("Invalid 'minimumSupportedVersion' field: expected integer.")
+            }
 
             RemoteUpdateConfig(
                 latestVersion = latestVersion,
                 versionCode = versionCode,
-                apkUrl = apkUrl.trim(),
+                apkUrl = apkUrl,
                 sha256 = sha256,
                 releaseNotes = releaseNotes.trim(),
                 mandatoryUpdate = mandatoryUpdate,

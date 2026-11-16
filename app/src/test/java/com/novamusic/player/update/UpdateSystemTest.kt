@@ -425,6 +425,61 @@ class UpdateSystemTest {
         assertEquals(99, prefs.dismissedVersionCode)
     }
 
+    // 11. Compatibility with Nova-Website live update.json schema (versionName + mandatory + versionCode=0 placeholder)
+    @Test
+    fun `website schema with versionName mandatory and versionCode zero placeholder parses and evaluates safely`() = runBlocking {
+        // Exact placeholder currently hosted on Cloudflare Pages
+        val placeholderJson = """
+            {
+              "versionName": "0.0.0-placeholder",
+              "versionCode": 0,
+              "apkUrl": "REPLACE_WITH_GITHUB_RELEASE_APK_URL",
+              "releaseNotes": "Placeholder update manifest.",
+              "mandatory": false
+            }
+        """.trimIndent()
+        val network = FakeNetworkClient(manifestJsonResponse = Result.success(placeholderJson))
+        val manager = createManager(network = network, installedVersionCode = 2)
+
+        manager.checkForUpdatesNow(manual = true)
+        val upToDate = manager.uiState.value as UpdateUiState.UpToDate
+        assertEquals(2, upToDate.installedVersionCode)
+
+        // Real update using versionName + mandatory=true
+        val websiteUpdateJson = """
+            {
+              "versionName": "v1.0.2",
+              "versionCode": 3,
+              "apkUrl": "$OFFICIAL_APK_URL",
+              "sha256": "$SAMPLE_SHA256",
+              "releaseNotes": "Audio engine polish.",
+              "mandatory": true
+            }
+        """.trimIndent()
+        network.manifestJsonResponse = Result.success(websiteUpdateJson)
+        manager.checkForUpdatesNow(manual = true)
+        val available = manager.uiState.value as UpdateUiState.Available
+        assertEquals("1.0.2", available.config.latestVersion)
+        assertEquals(3, available.config.versionCode)
+        assertTrue(available.isMandatory)
+    }
+
+    // 12. Missing required fields always fail explicitly instead of being silently ignored
+    @Test
+    fun `missing required manifest fields fail with explicit field errors`() = runBlocking {
+        val missingVersion = """{"versionCode": 3, "apkUrl": "$OFFICIAL_APK_URL"}"""
+        val err1 = UpdateEvaluator.parseUpdateConfigJson(missingVersion).exceptionOrNull()
+        assertTrue(err1?.message?.contains("latestVersion") == true)
+
+        val missingCode = """{"versionName": "1.0.2", "apkUrl": "$OFFICIAL_APK_URL"}"""
+        val err2 = UpdateEvaluator.parseUpdateConfigJson(missingCode).exceptionOrNull()
+        assertTrue(err2?.message?.contains("versionCode") == true)
+
+        val missingApkUrl = """{"versionName": "1.0.2", "versionCode": 3}"""
+        val err3 = UpdateEvaluator.parseUpdateConfigJson(missingApkUrl).exceptionOrNull()
+        assertTrue(err3?.message?.contains("apkUrl") == true)
+    }
+
     private companion object {
         const val OFFICIAL_APK_URL =
             "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.2/NOVA-MUSIC.apk"
