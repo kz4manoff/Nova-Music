@@ -75,7 +75,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -122,9 +121,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.novamusic.player.data.model.AudioOutputDevice
@@ -209,8 +210,10 @@ fun LiquidGlassBackdrop(
 
     val backgroundBase = if (isLight) {
         lerp(MaterialTheme.colorScheme.background, palette.primary, 0.08f)
+    } else if (novaColors.isAmoled) {
+        lerp(Color.Black, palette.deepTint, 0.22f)
     } else {
-        lerp(MaterialTheme.colorScheme.background, palette.deepTint, 0.55f)
+        lerp(MaterialTheme.colorScheme.background, palette.deepTint, 0.36f)
     }
 
     Box(
@@ -234,9 +237,9 @@ fun LiquidGlassBackdrop(
                         scaleX = pulseScale
                         scaleY = pulseScale
                         alpha = if (supportsHardwareBlur) {
-                            (if (isLight) 0.34f else 0.56f) * intensity.coerceIn(0.65f, 1.35f)
+                            (if (isLight) 0.34f else if (novaColors.isAmoled) 0.36f else 0.48f) * intensity.coerceIn(0.65f, 1.35f)
                         } else {
-                            if (isLight) 0.16f else 0.24f
+                            if (isLight) 0.16f else 0.18f
                         }
                         if (supportsHardwareBlur) {
                             renderEffect = RenderEffect
@@ -305,7 +308,7 @@ fun LiquidGlassBackdrop(
             )
         }
 
-        // Atmospheric readability gradient veil (rich contrast for crisp white/dark typography)
+        // Atmospheric readability gradient veil anchored in pure #000000 black
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -317,11 +320,17 @@ fun LiquidGlassBackdrop(
                                 Color(0x88EEF2F9),
                                 Color(0xDBEBEEF6)
                             )
+                        } else if (novaColors.isAmoled) {
+                            listOf(
+                                Color(0x8A000000),
+                                Color(0xBA000000),
+                                Color(0xF5000000)
+                            )
                         } else {
                             listOf(
-                                Color(0x47040407),
-                                Color(0x70040407),
-                                Color(0xCF030306)
+                                Color(0x66040508),
+                                Color(0x94040508),
+                                Color(0xE6020204)
                             )
                         }
                     )
@@ -773,9 +782,171 @@ fun LiquidGlassTopBar(
 }
 
 /**
- * Permanent minimal iOS 26 Liquid Glass Floating Pill Navigation Bar with an interactive
- * circular Liquid Glass indicator that physically tracks the user's finger, stretches with motion,
- * excites nearby icons, and magnetically snaps to the nearest destination on release.
+ * Floating iOS Liquid Glass Frosted Bar container shared between the Mini-Player Pill
+ * and Bottom Navigation Bar with authentic dark translucency, inner optical blur shimmer,
+ * specular edge reflections, and thin semi-transparent white border.
+ */
+@Composable
+private fun FloatingFrostedGlassContainer(
+    modifier: Modifier = Modifier,
+    shape: Shape,
+    elevation: Dp = 20.dp,
+    onClick: (() -> Unit)? = null,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val novaColors = LocalNovaColors.current
+    val isLight = novaColors.isLight
+    val supportsHardwareBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val blurRadiusPx = with(LocalDensity.current) { 20.dp.toPx() }
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (onClick != null && isPressed) 0.978f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "fg_glass_scale"
+    )
+
+    val glassFill = if (isLight) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xE8FFFFFF),
+                Color(0xDCF3F6FC),
+                Color(0xE8EAEFF8)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xD91A1C24),
+                Color(0xE30E1016),
+                Color(0xEE08090D)
+            )
+        )
+    }
+
+    val borderBrush = if (isLight) {
+        Brush.linearGradient(
+            colors = listOf(
+                Color.White,
+                Color(0x330F172A),
+                Color.White.copy(alpha = 0.85f)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.34f),
+                Color.White.copy(alpha = 0.12f),
+                Color.White.copy(alpha = 0.22f)
+            )
+        )
+    }
+
+    val clickableModifier = if (onClick != null) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier
+    }
+
+    Box(
+        modifier = modifier
+            .scale(pressScale)
+            .shadow(
+                elevation = elevation,
+                shape = shape,
+                ambientColor = if (isLight) Color(0x280F172A) else Color.Black.copy(alpha = 0.88f),
+                spotColor = if (isLight) Color(0x2E0F172A) else Color.Black.copy(alpha = 0.94f)
+            )
+            .clip(shape)
+            .background(glassFill)
+            .then(clickableModifier)
+    ) {
+        // Subtle blurred internal ambient reflection layer for realistic frosted depth
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    if (supportsHardwareBlur) {
+                        renderEffect = RenderEffect
+                            .createBlurEffect(blurRadiusPx, blurRadiusPx, Shader.TileMode.CLAMP)
+                            .asComposeRenderEffect()
+                    }
+                }
+                .drawBehind {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                if (isLight) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.08f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.22f, size.height * 0.10f),
+                            radius = size.width * 0.55f
+                        ),
+                        radius = size.width * 0.55f,
+                        center = Offset(size.width * 0.22f, size.height * 0.10f)
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                if (isLight) Color.White.copy(alpha = 0.30f) else Color(0xFF94A3B8).copy(alpha = 0.07f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.82f, size.height * 0.85f),
+                            radius = size.width * 0.45f
+                        ),
+                        radius = size.width * 0.45f,
+                        center = Offset(size.width * 0.82f, size.height * 0.85f)
+                    )
+                }
+        )
+
+        // Optical specular top-edge sheen & inner depth shadow
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .drawBehind {
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (isLight) 0.52f else 0.13f),
+                                Color.White.copy(alpha = if (isLight) 0.14f else 0.03f),
+                                Color.Transparent
+                            ),
+                            startY = 0f,
+                            endY = size.height * 0.48f
+                        )
+                    )
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = if (isLight) 0.04f else 0.24f)
+                            ),
+                            startY = size.height * 0.68f,
+                            endY = size.height
+                        )
+                    )
+                }
+                .border(width = 0.85.dp, brush = borderBrush, shape = shape)
+        )
+
+        content()
+    }
+}
+
+/**
+ * Floating iOS Liquid Glass Rounded Rectangular Bottom Navigation Bar featuring:
+ * - Five evenly spaced destinations with white minimalist icons & small white labels underneath
+ * - Subtle circular glass highlight smoothly tracking the active icon
+ * - Continuous horizontal finger-tracking swipe and tap gesture support
  */
 @Composable
 fun LiquidGlassTabBar(
@@ -785,11 +956,10 @@ fun LiquidGlassTabBar(
     modifier: Modifier = Modifier
 ) {
     val novaColors = LocalNovaColors.current
-    val palette = LocalArtworkPalette.current
-    val accent = MaterialTheme.colorScheme.primary
     val isLight = novaColors.isLight
     val reducedMotion = LocalReducedMotion.current
     val animStyle = LocalPlayerAnimationStyle.current
+    val navBarAppearance = LocalNavBarAppearance.current
     val performHaptic = rememberNovaHaptic()
     val density = LocalDensity.current
     val latestTabs by rememberUpdatedState(tabs)
@@ -819,87 +989,103 @@ fun LiquidGlassTabBar(
         animationSpec = when {
             dragSlot != null || reducedMotion -> snap()
             animStyle == PlayerAnimationStyle.MINIMAL -> tween(170, easing = FastOutSlowInEasing)
-            else -> spring(dampingRatio = 0.68f, stiffness = 410f)
+            else -> spring(dampingRatio = 0.74f, stiffness = 420f)
         },
         label = "lg_pill_indicator_slot"
     )
 
     val animatedVelocityX by animateFloatAsState(
         targetValue = dragVelocityX,
-        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.72f, stiffness = 480f),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.74f, stiffness = 480f),
         label = "lg_pill_vel_stretch"
     )
 
-    // Always compact, minimal, icon-only floating pill across all screens
+    val barHeight = when (navBarAppearance) {
+        NavBarAppearance.FLOATING_GLASS -> 64.dp
+        NavBarAppearance.COMPACT -> 60.dp
+        NavBarAppearance.MINIMAL_PILL -> 58.dp
+    }
+    val barShape = RoundedCornerShape(26.dp)
+    val horizontalInset = 16.dp
+
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 32.dp)
+            .padding(horizontal = horizontalInset)
             .padding(bottom = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        LiquidGlassSurface(
+        FloatingFrostedGlassContainer(
             modifier = Modifier
-                .widthIn(max = 316.dp)
+                .widthIn(max = 440.dp)
                 .fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            elevation = 22.dp,
-            glassOpacity = 1.06f
+            shape = barShape,
+            elevation = 22.dp
         ) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
-                    .padding(horizontal = 6.dp, vertical = 5.dp)
+                    .height(barHeight)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
                 val count = tabs.size.coerceAtLeast(1)
                 val tabWidth = maxWidth / count
                 val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
-                val innerPadPx = with(density) { 6.dp.toPx() }
-                val capsuleWidth = minOf(tabWidth * 0.44f, 26.dp)
-                val capsuleWidthPx = with(density) { capsuleWidth.toPx() }
-                val capsuleHeight = 3.5.dp
-                val capsuleShape = RoundedCornerShape(50)
+                val innerPadPx = with(density) { 8.dp.toPx() }
+                val circleSize = 35.dp
+                val circleSizePx = with(density) { circleSize.toPx() }
 
                 val isDragging = dragSlot != null
                 val travelDelta = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
                     0f
                 } else {
                     val settleDist = if (isDragging) 0f else abs(selectedIndex.toFloat() - indicatorSlot)
-                    val velStretch = (abs(animatedVelocityX) / 1450f).coerceIn(0f, 1f)
-                    (settleDist * 0.65f + velStretch * 0.85f).coerceIn(0f, 1.25f)
+                    val velStretch = (abs(animatedVelocityX) / 1600f).coerceIn(0f, 0.85f)
+                    (settleDist * 0.45f + velStretch * 0.55f).coerceIn(0f, 0.9f)
                 }
-                val capsuleScaleX = 1f + travelDelta * 0.28f
-                val capsuleScaleY = 1f - travelDelta * 0.06f
-                val capsuleX = indicatorSlot * tabWidthPx + (tabWidthPx - capsuleWidthPx) / 2f
+                val highlightScaleX = 1f + travelDelta * 0.14f
+                val highlightScaleY = 1f - travelDelta * 0.05f
+                val circleX = indicatorSlot * tabWidthPx + (tabWidthPx - circleSizePx) / 2f
 
-                // Sliding accent-colored horizontal capsule indicator centered above the active icon
+                // Subtle circular glass highlight gliding cleanly behind the active icon
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(top = 1.dp)
-                        .width(capsuleWidth)
-                        .height(capsuleHeight)
+                        .size(circleSize)
                         .graphicsLayer {
-                            translationX = capsuleX
-                            scaleX = capsuleScaleX
-                            scaleY = capsuleScaleY
+                            translationX = circleX
+                            scaleX = highlightScaleX
+                            scaleY = highlightScaleY
                         }
-                        .shadow(
-                            elevation = if (isDragging) 10.dp else 6.dp,
-                            shape = capsuleShape,
-                            ambientColor = accent.copy(alpha = if (isLight) 0.45f else 0.72f),
-                            spotColor = accent.copy(alpha = if (isLight) 0.50f else 0.78f)
-                        )
-                        .clip(capsuleShape)
+                        .clip(CircleShape)
                         .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    lerp(accent, Color.White, 0.20f),
-                                    accent,
-                                    lerp(accent, palette.glow, 0.22f)
-                                )
+                            Brush.radialGradient(
+                                colors = if (isLight) {
+                                    listOf(
+                                        Color.White.copy(alpha = 0.96f),
+                                        Color.White.copy(alpha = 0.72f)
+                                    )
+                                } else {
+                                    listOf(
+                                        Color.White.copy(alpha = 0.22f),
+                                        Color.White.copy(alpha = 0.10f)
+                                    )
+                                }
                             )
+                        )
+                        .border(
+                            width = 0.75.dp,
+                            brush = Brush.linearGradient(
+                                colors = if (isLight) {
+                                    listOf(Color.White, Color(0x260F172A))
+                                } else {
+                                    listOf(
+                                        Color.White.copy(alpha = 0.42f),
+                                        Color.White.copy(alpha = 0.10f)
+                                    )
+                                }
+                            ),
+                            shape = CircleShape
                         )
                 )
 
@@ -907,7 +1093,6 @@ fun LiquidGlassTabBar(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = 4.dp)
                         .pointerInput(count, tabWidthPx) {
                             val touchSlop = viewConfiguration.touchSlop
                             awaitEachGesture {
@@ -974,7 +1159,6 @@ fun LiquidGlassTabBar(
 
                                     if (!isHorizontalTracking) {
                                         if (abs(totalDy) > touchSlop && abs(totalDy) > abs(totalDx) * 1.25f) {
-                                            // Yield cleanly to vertical scrolls / Mini Player swipes
                                             dragSlot = null
                                             dragVelocityX = 0f
                                             return@awaitEachGesture
@@ -1005,57 +1189,41 @@ fun LiquidGlassTabBar(
                                     }
                                 }
 
-                                // Gesture interrupted / cancelled cleanly
                                 dragSlot = null
                                 dragVelocityX = 0f
                             }
                         },
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Top
                 ) {
                     tabs.forEachIndexed { index, tab ->
                         val proximity = iconProximityWeight(indicatorSlot, index)
+                        val isSelected = index == selectedIndex
                         val iconScale = if (reducedMotion) {
-                            if (index == selectedIndex) 1.10f else 1f
+                            if (isSelected) 1.06f else 1f
                         } else {
-                            1f + proximity * 0.16f
+                            1f + proximity * 0.08f
                         }
-                        val iconTint = lerp(
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                            accent,
-                            proximity
-                        )
+                        val baseForeground = if (isLight) Color(0xFF0E121B) else Color.White
+                        val iconTint = baseForeground.copy(alpha = 0.62f + proximity * 0.38f)
+                        val labelTint = baseForeground.copy(alpha = 0.56f + proximity * 0.44f)
 
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxHeight()
-                                .drawBehind {
-                                    if (proximity > 0.04f) {
-                                        val glowR = size.minDimension * 0.56f
-                                        drawCircle(
-                                            brush = Brush.radialGradient(
-                                                colors = listOf(
-                                                    accent.copy(alpha = (if (isLight) 0.14f else 0.24f) * proximity),
-                                                    palette.glow.copy(alpha = (if (isLight) 0.05f else 0.10f) * proximity),
-                                                    Color.Transparent
-                                                ),
-                                                center = Offset(size.width / 2f, size.height / 2f),
-                                                radius = glowR
-                                            ),
-                                            radius = glowR,
-                                            center = Offset(size.width / 2f, size.height / 2f)
-                                        )
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
+                                .fillMaxHeight(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Top
                         ) {
-                            Box(contentAlignment = Alignment.TopEnd) {
+                            Box(
+                                modifier = Modifier.size(circleSize),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Icon(
                                     imageVector = tab.icon,
                                     contentDescription = tab.label,
                                     tint = iconTint,
                                     modifier = Modifier
-                                        .size(22.dp)
+                                        .size(20.dp)
                                         .graphicsLayer {
                                             scaleX = iconScale
                                             scaleY = iconScale
@@ -1064,12 +1232,28 @@ fun LiquidGlassTabBar(
                                 if (tab.hasBadge) {
                                     Box(
                                         modifier = Modifier
-                                            .size(7.dp)
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 6.dp, end = 6.dp)
+                                            .size(6.5.dp)
                                             .clip(CircleShape)
-                                            .background(accent)
+                                            .background(MaterialTheme.colorScheme.primary)
+                                            .border(0.8.dp, Color.Black.copy(alpha = 0.65f), CircleShape)
                                     )
                                 }
                             }
+
+                            Text(
+                                text = tab.label,
+                                color = labelTint,
+                                fontSize = 10.sp,
+                                lineHeight = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                letterSpacing = 0.1.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
@@ -1170,7 +1354,11 @@ fun LiquidGlassArtwork(
 }
 
 /**
- * Floating iOS 26 Apple Music–inspired Compact Mini Player sitting smoothly above the Tab Bar.
+ * Floating iOS Liquid Glass Horizontal Pill Mini-Player sitting smoothly above the Bottom Navigation Bar:
+ * - Capsule pill shape with dark frosted glass, backdrop blur depth, subtle white border & glass reflections
+ * - Track artwork thumbnail & track title/artist on the left
+ * - Minimalist white Play/Pause and Next track buttons aligned to the right
+ * - Preserves tap-to-open Now Playing and directional swipe gestures
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1211,8 +1399,7 @@ fun LiquidGlassMiniPlayer(
         modifier = modifier
     ) {
         if (song != null) {
-            val palette = LocalArtworkPalette.current
-            val accent = MaterialTheme.colorScheme.primary
+            val isLight = LocalNovaColors.current.isLight
             val density = LocalDensity.current
             val rawProgress = if (playerState.durationMs > 0L) {
                 (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
@@ -1225,7 +1412,7 @@ fun LiquidGlassMiniPlayer(
                 label = "lg_mini_progress"
             )
 
-            // Almost-imperceptible alive floating breath while playing
+            // Subtle breathing lift while playing
             val floatTransition = rememberInfiniteTransition(label = "lg_mini_float")
             val breathingRaw by floatTransition.animateFloat(
                 initialValue = 0f,
@@ -1237,7 +1424,7 @@ fun LiquidGlassMiniPlayer(
                 label = "lg_mini_float_phase"
             )
             val floatingYPx = if (playerState.isPlaying && !reducedMotion && animStyle != PlayerAnimationStyle.MINIMAL) {
-                with(density) { (-1.5f * breathingRaw).dp.toPx() }
+                with(density) { (-1.2f * breathingRaw).dp.toPx() }
             } else {
                 0f
             }
@@ -1277,258 +1464,304 @@ fun LiquidGlassMiniPlayer(
             }
             val miniGestureAlpha = (1f - verticalDragFraction * 0.45f).coerceIn(0.45f, 1f)
 
-            LiquidGlassSurface(
+            val pillShape = RoundedCornerShape(50)
+            val primaryInk = if (isLight) Color(0xFF0E121B) else Color.White
+            val secondaryInk = if (isLight) Color(0xFF525A6B) else Color.White.copy(alpha = 0.68f)
+
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .graphicsLayer {
-                        translationX = animatedDragX
-                        translationY = animatedDragY + floatingYPx
-                        scaleX = miniGestureScale
-                        scaleY = miniGestureScale
-                        alpha = miniGestureAlpha
-                    }
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
-                    .novaDirectionalDrag(
-                        key = song.id,
-                        enableHorizontal = true,
-                        enableVertical = true,
-                        edgeExclusionDp = gestureConfig.edgeExclusionDp,
-                        directionLockRatio = gestureConfig.directionLockRatio,
-                        onHorizontalDrag = { deltaX ->
-                            dragX = (dragX + deltaX).coerceIn(-miniSwipeHorizThresholdPx * 2.2f, miniSwipeHorizThresholdPx * 2.2f)
-                        },
-                        onHorizontalEnd = { velocityX ->
-                            when (resolveHorizontalTrackAction(dragX, velocityX, miniSwipeHorizThresholdPx, miniHorizVelPx)) {
-                                SwipeDirection.NEXT -> {
-                                    performHaptic()
-                                    onNext()
-                                }
-                                SwipeDirection.PREVIOUS -> {
-                                    performHaptic()
-                                    onPrevious()
-                                }
-                                SwipeDirection.NONE -> Unit
-                            }
-                            dragX = 0f
-                        },
-                        onHorizontalCancel = { dragX = 0f },
-                        onVerticalDrag = { deltaY ->
-                            val maxDown = if (onDismissMiniPlayer != null) miniMaxPullDownPx else 24f
-                            dragY = (dragY + deltaY).coerceIn(-miniMaxPullUpPx, maxDown)
-                        },
-                        onVerticalEnd = { velocityY ->
-                            when {
-                                shouldTriggerMiniPlayerExpand(dragY, velocityY, miniExpandThresholdPx, miniVertVelPx) -> {
-                                    performHaptic()
-                                    onOpenNowPlaying()
-                                }
-                                onDismissMiniPlayer != null &&
-                                    shouldTriggerVerticalDismiss(dragY, velocityY, miniDismissThresholdPx, miniVertVelPx) -> {
-                                    performHaptic()
-                                    onDismissMiniPlayer()
-                                }
-                            }
-                            dragY = 0f
-                        },
-                        onVerticalCancel = { dragY = 0f }
-                    ),
-                shape = RoundedCornerShape(24.dp),
-                accentTint = palette.primary,
-                highlighted = true,
-                elevation = 20.dp,
-                onClick = {
-                    performHaptic()
-                    onOpenNowPlaying()
-                }
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AnimatedContent(
-                            targetState = song.artworkUri,
-                            transitionSpec = {
-                                if (reducedMotion) {
-                                    fadeIn(tween(80)) togetherWith fadeOut(tween(80))
-                                } else {
-                                    (fadeIn(tween(300, easing = FastOutSlowInEasing)) + scaleIn(
-                                        initialScale = 0.88f,
-                                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)
-                                    )) togetherWith (fadeOut(tween(180)) + scaleOut(
-                                        targetScale = 0.94f,
-                                        animationSpec = tween(180)
-                                    ))
-                                }
-                            },
-                            label = "lg_mini_art_crossfade"
-                        ) { targetArtwork ->
-                            Box(contentAlignment = Alignment.Center) {
-                                LiquidGlassArtwork(
-                                    artworkUri = targetArtwork,
-                                    contentDescription = song.album,
-                                    modifier = Modifier.size(46.dp),
-                                    shape = RoundedCornerShape(13.dp),
-                                    shadowElevation = 10.dp
-                                )
-                                androidx.compose.animation.AnimatedVisibility(
-                                    visible = playerState.isPlaying,
-                                    enter = fadeIn(tween(180)),
-                                    exit = fadeOut(tween(160))
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(46.dp)
-                                            .clip(RoundedCornerShape(13.dp))
-                                            .background(Color.Black.copy(alpha = 0.36f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        AnimatedEqualizerBars(isPlaying = true, color = Color.White)
-                                    }
-                                }
-                            }
+                FloatingFrostedGlassContainer(
+                    modifier = Modifier
+                        .widthIn(max = 440.dp)
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            translationX = animatedDragX
+                            translationY = animatedDragY + floatingYPx
+                            scaleX = miniGestureScale
+                            scaleY = miniGestureScale
+                            alpha = miniGestureAlpha
                         }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        AnimatedContent(
-                            targetState = song,
-                            transitionSpec = {
-                                if (reducedMotion) {
-                                    fadeIn(tween(80)) togetherWith fadeOut(tween(80))
-                                } else {
-                                    (fadeIn(tween(260, easing = FastOutSlowInEasing)) + slideInHorizontally(
-                                        tween(260, easing = FastOutSlowInEasing)
-                                    ) { it / 8 }) togetherWith
-                                        (fadeOut(tween(160)) + slideOutHorizontally(
-                                            tween(170, easing = FastOutSlowInEasing)
-                                        ) { -it / 8 })
-                                }
+                        .novaDirectionalDrag(
+                            key = song.id,
+                            enableHorizontal = true,
+                            enableVertical = true,
+                            edgeExclusionDp = gestureConfig.edgeExclusionDp,
+                            directionLockRatio = gestureConfig.directionLockRatio,
+                            onHorizontalDrag = { deltaX ->
+                                dragX = (dragX + deltaX).coerceIn(-miniSwipeHorizThresholdPx * 2.2f, miniSwipeHorizThresholdPx * 2.2f)
                             },
-                            contentKey = { it.id },
-                            label = "lg_mini_track_info",
-                            modifier = Modifier.weight(1f)
-                        ) { targetSong ->
-                            Column {
-                                Text(
-                                    text = targetSong.title,
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    modifier = Modifier.basicMarquee()
-                                )
-                                Text(
-                                    text = "${targetSong.artist} • ${FormatUtils.formatDuration(playerState.positionMs)}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        val playInteraction = remember { MutableInteractionSource() }
-                        val isPlayPressed by playInteraction.collectIsPressedAsState()
-                        val playBtnScale by animateFloatAsState(
-                            targetValue = if (isPlayPressed) 0.86f else 1f,
-                            animationSpec = if (reducedMotion) snap() else spring(
-                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            ),
-                            label = "lg_mini_play_scale"
-                        )
-                        val isLightMini = LocalNovaColors.current.isLight
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .graphicsLayer {
-                                    scaleX = playBtnScale
-                                    scaleY = playBtnScale
-                                }
-                                .clip(CircleShape)
-                                .background(
-                                    if (playerState.isPlaying) accent.copy(alpha = 0.24f)
-                                    else Color.White.copy(alpha = if (isLightMini) 0.86f else 0.14f)
-                                )
-                                .border(
-                                    width = 0.75.dp,
-                                    color = if (playerState.isPlaying) accent.copy(alpha = 0.65f)
-                                    else Color.White.copy(alpha = 0.28f),
-                                    shape = CircleShape
-                                )
-                                .clickable(
-                                    interactionSource = playInteraction,
-                                    indication = null,
-                                    onClick = {
+                            onHorizontalEnd = { velocityX ->
+                                when (resolveHorizontalTrackAction(dragX, velocityX, miniSwipeHorizThresholdPx, miniHorizVelPx)) {
+                                    SwipeDirection.NEXT -> {
                                         performHaptic()
-                                        onTogglePlayPause()
+                                        onNext()
                                     }
-                                ),
-                            contentAlignment = Alignment.Center
+                                    SwipeDirection.PREVIOUS -> {
+                                        performHaptic()
+                                        onPrevious()
+                                    }
+                                    SwipeDirection.NONE -> Unit
+                                }
+                                dragX = 0f
+                            },
+                            onHorizontalCancel = { dragX = 0f },
+                            onVerticalDrag = { deltaY ->
+                                val maxDown = if (onDismissMiniPlayer != null) miniMaxPullDownPx else 24f
+                                dragY = (dragY + deltaY).coerceIn(-miniMaxPullUpPx, maxDown)
+                            },
+                            onVerticalEnd = { velocityY ->
+                                when {
+                                    shouldTriggerMiniPlayerExpand(dragY, velocityY, miniExpandThresholdPx, miniVertVelPx) -> {
+                                        performHaptic()
+                                        onOpenNowPlaying()
+                                    }
+                                    onDismissMiniPlayer != null &&
+                                        shouldTriggerVerticalDismiss(dragY, velocityY, miniDismissThresholdPx, miniVertVelPx) -> {
+                                        performHaptic()
+                                        onDismissMiniPlayer()
+                                    }
+                                }
+                                dragY = 0f
+                            },
+                            onVerticalCancel = { dragY = 0f }
+                        ),
+                    shape = pillShape,
+                    elevation = 20.dp,
+                    onClick = {
+                        performHaptic()
+                        onOpenNowPlaying()
+                    }
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 8.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             AnimatedContent(
-                                targetState = playerState.isPlaying,
+                                targetState = song.artworkUri,
                                 transitionSpec = {
-                                    (fadeIn(tween(150)) + scaleIn(initialScale = 0.72f, animationSpec = tween(150))) togetherWith
-                                        (fadeOut(tween(110)) + scaleOut(targetScale = 0.72f, animationSpec = tween(110)))
+                                    if (reducedMotion) {
+                                        fadeIn(tween(80)) togetherWith fadeOut(tween(80))
+                                    } else {
+                                        (fadeIn(tween(300, easing = FastOutSlowInEasing)) + scaleIn(
+                                            initialScale = 0.88f,
+                                            animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)
+                                        )) togetherWith (fadeOut(tween(180)) + scaleOut(
+                                            targetScale = 0.94f,
+                                            animationSpec = tween(180)
+                                        ))
+                                    }
                                 },
-                                label = "lg_mini_play_morph"
-                            ) { playing ->
+                                label = "lg_mini_art_crossfade"
+                            ) { targetArtwork ->
+                                Box(contentAlignment = Alignment.Center) {
+                                    LiquidGlassArtwork(
+                                        artworkUri = targetArtwork,
+                                        contentDescription = song.album,
+                                        modifier = Modifier.size(44.dp),
+                                        shape = CircleShape,
+                                        shadowElevation = 8.dp
+                                    )
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = playerState.isPlaying,
+                                        enter = fadeIn(tween(180)),
+                                        exit = fadeOut(tween(160))
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.Black.copy(alpha = 0.36f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            AnimatedEqualizerBars(isPlaying = true, color = Color.White)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(11.dp))
+
+                            AnimatedContent(
+                                targetState = song,
+                                transitionSpec = {
+                                    if (reducedMotion) {
+                                        fadeIn(tween(80)) togetherWith fadeOut(tween(80))
+                                    } else {
+                                        (fadeIn(tween(260, easing = FastOutSlowInEasing)) + slideInHorizontally(
+                                            tween(260, easing = FastOutSlowInEasing)
+                                        ) { it / 8 }) togetherWith
+                                            (fadeOut(tween(160)) + slideOutHorizontally(
+                                                tween(170, easing = FastOutSlowInEasing)
+                                            ) { -it / 8 })
+                                    }
+                                },
+                                contentKey = { it.id },
+                                label = "lg_mini_track_info",
+                                modifier = Modifier.weight(1f)
+                            ) { targetSong ->
+                                Column(verticalArrangement = Arrangement.Center) {
+                                    Text(
+                                        text = targetSong.title,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontSize = 14.5.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
+                                        color = primaryInk,
+                                        maxLines = 1,
+                                        modifier = Modifier.basicMarquee()
+                                    )
+                                    Text(
+                                        text = "${targetSong.artist} • ${FormatUtils.formatDuration(playerState.positionMs)}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                        color = secondaryInk,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Right-aligned minimalist Play/Pause pill button
+                            val playInteraction = remember { MutableInteractionSource() }
+                            val isPlayPressed by playInteraction.collectIsPressedAsState()
+                            val playBtnScale by animateFloatAsState(
+                                targetValue = if (isPlayPressed) 0.86f else 1f,
+                                animationSpec = if (reducedMotion) snap() else spring(
+                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                ),
+                                label = "lg_mini_play_scale"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .graphicsLayer {
+                                        scaleX = playBtnScale
+                                        scaleY = playBtnScale
+                                    }
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isLight) {
+                                            Color.White.copy(alpha = if (playerState.isPlaying) 0.96f else 0.82f)
+                                        } else {
+                                            Color.White.copy(alpha = if (playerState.isPlaying) 0.20f else 0.12f)
+                                        }
+                                    )
+                                    .border(
+                                        width = 0.75.dp,
+                                        color = if (isLight) {
+                                            Color(0x280F172A)
+                                        } else {
+                                            Color.White.copy(alpha = if (playerState.isPlaying) 0.38f else 0.24f)
+                                        },
+                                        shape = CircleShape
+                                    )
+                                    .clickable(
+                                        interactionSource = playInteraction,
+                                        indication = null,
+                                        onClick = {
+                                            performHaptic()
+                                            onTogglePlayPause()
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AnimatedContent(
+                                    targetState = playerState.isPlaying,
+                                    transitionSpec = {
+                                        (fadeIn(tween(150)) + scaleIn(initialScale = 0.72f, animationSpec = tween(150))) togetherWith
+                                            (fadeOut(tween(110)) + scaleOut(targetScale = 0.72f, animationSpec = tween(110)))
+                                    },
+                                    label = "lg_mini_play_morph"
+                                ) { playing ->
+                                    Icon(
+                                        imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                        contentDescription = if (playing) "Pause" else "Play",
+                                        tint = primaryInk,
+                                        modifier = Modifier.size(21.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Right-aligned Next Track button beside Play/Pause
+                            val nextInteraction = remember { MutableInteractionSource() }
+                            val isNextPressed by nextInteraction.collectIsPressedAsState()
+                            val nextBtnScale by animateFloatAsState(
+                                targetValue = if (isNextPressed) 0.86f else 1f,
+                                animationSpec = if (reducedMotion) snap() else spring(
+                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                ),
+                                label = "lg_mini_next_scale"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .graphicsLayer {
+                                        scaleX = nextBtnScale
+                                        scaleY = nextBtnScale
+                                    }
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isLight) Color.White.copy(alpha = 0.76f) else Color.White.copy(alpha = 0.10f)
+                                    )
+                                    .border(
+                                        width = 0.65.dp,
+                                        color = if (isLight) Color(0x200F172A) else Color.White.copy(alpha = 0.20f),
+                                        shape = CircleShape
+                                    )
+                                    .clickable(
+                                        interactionSource = nextInteraction,
+                                        indication = null,
+                                        onClick = {
+                                            performHaptic()
+                                            onNext()
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Icon(
-                                    imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                    contentDescription = if (playing) "Pause" else "Play",
-                                    tint = if (playing) accent else MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.size(22.dp)
+                                    imageVector = Icons.Rounded.SkipNext,
+                                    contentDescription = "Next",
+                                    tint = primaryInk,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
 
-                        if (onOpenAudioOutput != null) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            val outputIcon = activeOutputDevice?.let { audioOutputIcon(it.type) } ?: Icons.Rounded.VolumeUp
-                            LiquidGlassIconButton(
-                                icon = outputIcon,
-                                contentDescription = "Audio Output",
-                                active = activeOutputDevice?.type?.isExternal == true,
-                                showDotWhenActive = activeOutputDevice?.type?.isExternal == true,
-                                size = 34.dp,
-                                iconSize = 18.dp,
-                                onClick = onOpenAudioOutput
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        LiquidGlassIconButton(
-                            icon = Icons.Rounded.SkipNext,
-                            contentDescription = "Next",
-                            size = 36.dp,
-                            iconSize = 20.dp,
-                            onClick = onNext
-                        )
-                    }
-
-                    // Hairline optical progress filament along bottom edge
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.2.dp)
-                            .background(Color.White.copy(alpha = 0.10f))
-                    ) {
+                        // Subtle inset progress filament along the bottom of the pill
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(smoothProgress)
-                                .height(2.2.dp)
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp)
+                                .height(1.8.dp)
+                                .clip(RoundedCornerShape(50))
                                 .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(palette.glow, accent)
-                                    )
+                                    if (isLight) Color(0x180F172A) else Color.White.copy(alpha = 0.12f)
                                 )
-                        )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(smoothProgress)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (isLight) Color(0xCC0E121B) else Color.White.copy(alpha = 0.85f)
+                                    )
+                            )
+                        }
                     }
                 }
             }

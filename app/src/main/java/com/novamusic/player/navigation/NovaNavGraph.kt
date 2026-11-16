@@ -27,9 +27,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.MaterialTheme
@@ -211,20 +211,20 @@ fun NovaMainAppShell(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: NovaDestinations.HOME
 
-    // Required 5 Floating Liquid Glass Tabs: Home, Library, Search, Playlists, Settings
+    // Required 5 Floating Liquid Glass Tabs: Home, Reciters, Playlists, Settings, Search
     val hasPendingUpdate = pendingUpdateVersion != null
     val bottomTabs = remember(hasPendingUpdate) {
         listOf(
             LiquidGlassNavTab(NovaDestinations.HOME, "Home", Icons.Rounded.Home),
-            LiquidGlassNavTab(NovaDestinations.LIBRARY, "Library", Icons.Rounded.LibraryMusic),
-            LiquidGlassNavTab(NovaDestinations.SEARCH, "Search", Icons.Rounded.Search),
-            LiquidGlassNavTab(NovaDestinations.PLAYLISTS, "Playlists", Icons.Rounded.QueueMusic),
+            LiquidGlassNavTab(NovaDestinations.LIBRARY, "Reciters", Icons.Rounded.RecordVoiceOver),
+            LiquidGlassNavTab(NovaDestinations.PLAYLISTS, "Playlists", Icons.Rounded.GridView),
             LiquidGlassNavTab(
                 NovaDestinations.SETTINGS,
                 "Settings",
                 Icons.Rounded.Settings,
                 hasBadge = hasPendingUpdate
-            )
+            ),
+            LiquidGlassNavTab(NovaDestinations.SEARCH, "Search", Icons.Rounded.Search)
         )
     }
 
@@ -244,8 +244,6 @@ fun NovaMainAppShell(
         }
     }
 
-    val isMiniPlayerVisible = playerState.currentSong != null && !miniPlayerDismissed
-    val miniPlayerHeight = if (isMiniPlayerVisible) 86.dp else 0.dp
     val reducedMotion = rememberReducedMotion() || !appSettings.interfaceAnimations
     val overlayOpen = showNowPlaying || lyricsTargetSong != null
     val activeCollapseFraction = if (showNowPlaying && lyricsTargetSong == null) {
@@ -310,8 +308,8 @@ fun NovaMainAppShell(
                                 Brush.verticalGradient(
                                     colors = listOf(
                                         Color.Transparent,
-                                        MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
-                                        MaterialTheme.colorScheme.background.copy(alpha = 0.84f)
+                                        MaterialTheme.colorScheme.background.copy(alpha = 0.42f),
+                                        MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
                                     )
                                 )
                             )
@@ -346,6 +344,7 @@ fun NovaMainAppShell(
                     }
                 }
             ) { innerPadding ->
+                val miniPlayerHeight = innerPadding.calculateBottomPadding()
                 NavHost(
                     navController = navController,
                     startDestination = NovaDestinations.HOME,
@@ -403,9 +402,7 @@ fun NovaMainAppShell(
                                 scaleOut(targetScale = 0.965f, animationSpec = tween(210))
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = innerPadding.calculateBottomPadding())
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     composable(NovaDestinations.HOME) {
                         HomeScreen(
