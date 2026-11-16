@@ -83,6 +83,8 @@ fun AboutScreen(
     val accent = MaterialTheme.colorScheme.primary
     val dividerColor = novaColors.borderSubtle.copy(alpha = 0.45f)
 
+    var showLicensesDialog by remember { mutableStateOf(false) }
+
     var revealStage by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) {
         revealStage = 1
@@ -119,8 +121,8 @@ fun AboutScreen(
     ) {
         item {
             LiquidGlassTopBar(
-                title = "About",
-                subtitle = "NOVA MUSIC • v${BuildConfig.VERSION_NAME}",
+                title = "About NOVA MUSIC",
+                subtitle = "v${BuildConfig.VERSION_NAME} • Build ${BuildConfig.VERSION_CODE}",
                 leadingAction = {
                     LiquidGlassIconButton(
                         icon = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -398,6 +400,30 @@ fun AboutScreen(
             }
         }
 
+        // Engine & Open Source Licenses
+        item {
+            AnimatedVisibility(
+                visible = revealStage >= 3,
+                enter = fadeIn(tween(490)) + slideInVertically(
+                    initialOffsetY = { it / 6 },
+                    animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)
+                )
+            ) {
+                NovaSettingsCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    NovaInfoRow("Audio Engine", "Media3 ExoPlayer + MediaSession")
+                    NovaSettingsDivider()
+                    NovaInfoRow("Package ID", "com.novamusic.player")
+                    NovaSettingsDivider()
+                    NovaActionSettingRow(
+                        icon = Icons.Rounded.Code,
+                        title = "Open Source Licenses",
+                        subtitle = "AndroidX, Media3, Jetpack Compose, Coil, Room",
+                        onClick = { showLicensesDialog = true }
+                    )
+                }
+            }
+        }
+
         // Bottom Copyright Notice
         item {
             AnimatedVisibility(
@@ -429,6 +455,10 @@ fun AboutScreen(
                 }
             }
         }
+    }
+
+    if (showLicensesDialog) {
+        NovaOpenSourceLicensesDialog(onDismiss = { showLicensesDialog = false })
     }
 }
 

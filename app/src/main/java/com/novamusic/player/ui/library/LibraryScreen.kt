@@ -106,6 +106,7 @@ import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.SongListItem
 import com.novamusic.player.ui.components.SongOptionsBottomSheet
 import com.novamusic.player.ui.components.TrackInfoDialog
+import com.novamusic.player.ui.components.shareAudioTrack
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaGold
@@ -338,7 +339,10 @@ fun LibraryScreen(
             onAddToPlaylist = { addToPlaylistSong = song },
             onToggleFavorite = { viewModel.toggleFavorite(song.id) },
             onViewLyrics = { onOpenLyricsForSong(song) },
-            onViewInfo = { viewModel.loadTrackInfo(song) }
+            onViewInfo = { viewModel.loadTrackInfo(song) },
+            onGoToAlbum = { onOpenAlbum(song.albumId) },
+            onGoToArtist = { onOpenArtist(song.artist) },
+            onShare = { shareAudioTrack(context, song) }
         )
     }
 
@@ -927,6 +931,7 @@ fun CollectionDetailScreen(
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedTrackInfo by viewModel.selectedTrackInfo.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var optionsSong by remember { mutableStateOf<Song?>(null) }
     var addToPlaylistSong by remember { mutableStateOf<Song?>(null) }
 
@@ -1016,7 +1021,8 @@ fun CollectionDetailScreen(
             onAddToPlaylist = { addToPlaylistSong = song },
             onToggleFavorite = { viewModel.toggleFavorite(song.id) },
             onViewLyrics = { onOpenLyricsForSong(song) },
-            onViewInfo = { viewModel.loadTrackInfo(song) }
+            onViewInfo = { viewModel.loadTrackInfo(song) },
+            onShare = { shareAudioTrack(context, song) }
         )
     }
 

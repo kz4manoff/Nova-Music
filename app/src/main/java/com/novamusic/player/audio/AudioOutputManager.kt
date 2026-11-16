@@ -32,8 +32,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -165,6 +168,10 @@ class AudioOutputManager(context: Context) {
     // Observed directly by MusicService to call exoPlayer.setPreferredAudioDevice(deviceInfo)
     private val _preferredAudioDeviceInfo = MutableStateFlow<AudioDeviceInfo?>(null)
     val preferredAudioDeviceInfo: StateFlow<AudioDeviceInfo?> = _preferredAudioDeviceInfo.asStateFlow()
+
+    // Debounced external audio sink connection events for optional playback auto-resume
+    private val _externalDeviceConnectedEvents = MutableSharedFlow<AudioOutputDevice>(extraBufferCapacity = 4)
+    val externalDeviceConnectedEvents: SharedFlow<AudioOutputDevice> = _externalDeviceConnectedEvents.asSharedFlow()
 
     private var userPreferredDeviceId: String? = null
     private var a2dpProxy: BluetoothA2dp? = null
@@ -652,6 +659,9 @@ class AudioOutputManager(context: Context) {
             batteryPercent = if (connected) device.batteryPercent else null
         )
         _routingState.value = _routingState.value.copy(activeBanner = banner)
+        if (connected) {
+            _externalDeviceConnectedEvents.tryEmit(device)
+        }
 
         bannerDismissJob?.cancel()
         bannerDismissJob = scope.launch {

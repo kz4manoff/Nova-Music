@@ -1,5 +1,7 @@
 package com.novamusic.player.ui.settings
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -33,12 +35,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
@@ -53,10 +58,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,7 +95,9 @@ import com.novamusic.player.BuildConfig
 import com.novamusic.player.R
 import com.novamusic.player.data.model.AccentColorOption
 import com.novamusic.player.data.model.EqualizerState
+import com.novamusic.player.ui.components.LiquidGlassIconButton
 import com.novamusic.player.ui.components.LiquidGlassSurface
+import com.novamusic.player.ui.components.LiquidGlassTopBar
 import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.rememberNovaHaptic
 import com.novamusic.player.ui.theme.LocalNovaColors
@@ -99,7 +109,8 @@ fun NovaGlassProfileCard(
     librarySizeLabel: String,
     eqEnabled: Boolean,
     activePreset: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
     val accent = MaterialTheme.colorScheme.primary
     val novaColors = LocalNovaColors.current
@@ -109,7 +120,8 @@ fun NovaGlassProfileCard(
         shape = RoundedCornerShape(22.dp),
         elevation = 8.dp,
         glassOpacity = 0.88f,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1091,7 +1103,7 @@ fun NovaInfoRow(
 }
 
 @Composable
-private fun SettingIconTile(
+fun SettingIconTile(
     icon: ImageVector,
     tint: Color,
     highlighted: Boolean,
@@ -1100,10 +1112,10 @@ private fun SettingIconTile(
     val accent = MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .size(34.dp)
+            .clip(RoundedCornerShape(11.dp))
             .background(
-                if (highlighted) accent.copy(alpha = 0.16f) else recessedBg.copy(alpha = 0.82f)
+                if (highlighted) accent.copy(alpha = 0.16f) else recessedBg.copy(alpha = 0.85f)
             ),
         contentAlignment = Alignment.Center
     ) {
@@ -1111,7 +1123,225 @@ private fun SettingIconTile(
             imageVector = icon,
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(17.dp)
+            modifier = Modifier.size(18.dp)
         )
+    }
+}
+
+@Composable
+fun NovaSettingsCategoryRow(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    statusBadge: String? = null,
+    highlightIcon: Boolean = false,
+    onClick: () -> Unit
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val novaColors = LocalNovaColors.current
+    val reducedMotion = LocalReducedMotion.current
+    val performHaptic = rememberNovaHaptic()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && !reducedMotion) 0.982f else 1f,
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.76f, stiffness = 520f),
+        label = "category_press_scale"
+    )
+    val rowBgColor by animateColorAsState(
+        targetValue = if (isPressed) {
+            accent.copy(alpha = if (novaColors.isLight) 0.08f else 0.12f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(140),
+        label = "category_press_bg"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .background(rowBgColor)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    performHaptic()
+                    onClick()
+                }
+            )
+            .padding(horizontal = 4.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingIconTile(
+            icon = icon,
+            tint = if (highlightIcon) accent else MaterialTheme.colorScheme.primary.copy(alpha = 0.90f),
+            highlighted = highlightIcon,
+            recessedBg = novaColors.recessedSurface
+        )
+        Spacer(modifier = Modifier.width(13.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        if (!statusBadge.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(
+                        if (novaColors.isLight) accent.copy(alpha = 0.12f)
+                        else novaColors.recessedSurface.copy(alpha = 0.90f)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = statusBadge,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                    color = if (novaColors.isLight) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = "Open $title",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+fun NovaSettingsSubpageScaffold(
+    title: String,
+    subtitle: String? = null,
+    onBack: () -> Unit,
+    bottomContentPadding: Dp,
+    trailingActions: (@Composable RowScope.() -> Unit)? = null,
+    content: LazyListScope.() -> Unit
+) {
+    val reducedMotion = LocalReducedMotion.current
+    val density = LocalDensity.current
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+
+    val entranceAlpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = if (reducedMotion) snap() else tween(230, easing = FastOutSlowInEasing),
+        label = "subpage_entrance_alpha"
+    )
+    val entranceOffsetPx by animateFloatAsState(
+        targetValue = if (entered) 0f else with(density) { 12.dp.toPx() },
+        animationSpec = if (reducedMotion) snap() else tween(250, easing = FastOutSlowInEasing),
+        label = "subpage_entrance_y"
+    )
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                alpha = entranceAlpha
+                translationY = entranceOffsetPx
+            },
+        contentPadding = PaddingValues(bottom = bottomContentPadding + 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item(key = "subpage_topbar") {
+            LiquidGlassTopBar(
+                title = title,
+                subtitle = subtitle,
+                leadingAction = {
+                    LiquidGlassIconButton(
+                        icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        size = 40.dp,
+                        iconSize = 20.dp,
+                        onClick = onBack
+                    )
+                },
+                trailingActions = trailingActions
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+fun NovaPrivacyPolicyDialog(
+    onDismiss: () -> Unit
+) {
+    NovaGlassSelectionDialog(
+        title = "Privacy Policy",
+        subtitle = "NOVA MUSIC Local Data Commitment",
+        onDismiss = onDismiss,
+        confirmText = "OK"
+    ) {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Text(
+                text = "NOVA MUSIC runs 100% locally on your device.\n\n" +
+                    "• Zero network analytics, telemetry, ads, or user tracking.\n" +
+                    "• Audio permissions (READ_MEDIA_AUDIO / READ_EXTERNAL_STORAGE) are used exclusively to index and play local music files.\n" +
+                    "• Bluetooth permission is used solely to display connected audio device names and battery status.\n" +
+                    "• Playlists, favorites, EQ profiles, and settings remain stored privately on-device using Android Room and DataStore Preferences.\n" +
+                    "• Optional app update checks connect only over HTTPS to fetch the official release manifest and verify SHA-256 checksums.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun NovaOpenSourceLicensesDialog(
+    onDismiss: () -> Unit
+) {
+    NovaGlassSelectionDialog(
+        title = "Open Source Licenses",
+        subtitle = "Libraries powering NOVA MUSIC",
+        onDismiss = onDismiss
+    ) {
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            listOf(
+                "Jetpack Compose & Material3" to "Android Open Source Project • Apache 2.0",
+                "AndroidX Media3 (ExoPlayer & MediaSession)" to "The Android Open Source Project • Apache 2.0",
+                "Room Persistence & DataStore" to "AndroidX Jetpack • Apache 2.0",
+                "Coil Image Loading (coil-compose)" to "Coil Contributors • Apache 2.0",
+                "Kotlin Coroutines" to "JetBrains s.r.o. • Apache 2.0"
+            ).forEach { (lib, detail) ->
+                Column {
+                    Text(lib, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }

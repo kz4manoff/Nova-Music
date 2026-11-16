@@ -92,8 +92,18 @@ import com.novamusic.player.ui.playlists.PlaylistsScreen
 import com.novamusic.player.ui.playlists.PlaylistsViewModel
 import com.novamusic.player.ui.search.SearchScreen
 import com.novamusic.player.ui.settings.AboutScreen
+import com.novamusic.player.ui.settings.AppUpdatesSettingsPage
+import com.novamusic.player.ui.settings.AppearanceSettingsPage
+import com.novamusic.player.ui.settings.AudioEqualizerSettingsPage
+import com.novamusic.player.ui.settings.DownloadsSettingsPage
+import com.novamusic.player.ui.settings.HeadphonesSettingsPage
+import com.novamusic.player.ui.settings.LibraryManagementSettingsPage
+import com.novamusic.player.ui.settings.NotificationsSettingsPage
+import com.novamusic.player.ui.settings.PlaybackSettingsPage
+import com.novamusic.player.ui.settings.PrivacySettingsPage
 import com.novamusic.player.ui.settings.SettingsScreen
 import com.novamusic.player.ui.settings.SettingsViewModel
+import com.novamusic.player.ui.settings.StorageSettingsPage
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.rememberArtworkPalette
 
@@ -178,12 +188,18 @@ fun NovaMainAppShell(
     }
 
     val navigateTab: (String) -> Unit = { route ->
-        navController.navigate(route) {
-            popUpTo(navController.graph.findStartDestination().id) {
-                saveState = true
+        if (route == NovaDestinations.SETTINGS &&
+            (currentRoute.startsWith("settings/") || currentRoute == NovaDestinations.ABOUT)
+        ) {
+            navController.popBackStack(NovaDestinations.SETTINGS, inclusive = false)
+        } else {
+            navController.navigate(route) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
             }
-            launchSingleTop = true
-            restoreState = true
         }
     }
 
@@ -419,7 +435,107 @@ fun NovaMainAppShell(
                             viewModel = settingsViewModel,
                             onBack = null,
                             bottomContentPadding = miniPlayerHeight,
-                            onOpenAudioOutput = { showAudioOutputSheet = true }
+                            onOpenAppearance = { navController.navigate(NovaDestinations.SETTINGS_APPEARANCE) },
+                            onOpenPlayback = { navController.navigate(NovaDestinations.SETTINGS_PLAYBACK) },
+                            onOpenAudioEqualizer = { navController.navigate(NovaDestinations.SETTINGS_EQUALIZER) },
+                            onOpenHeadphones = { navController.navigate(NovaDestinations.SETTINGS_HEADPHONES) },
+                            onOpenNotifications = { navController.navigate(NovaDestinations.SETTINGS_NOTIFICATIONS) },
+                            onOpenLibraryManagement = { navController.navigate(NovaDestinations.SETTINGS_LIBRARY) },
+                            onOpenDownloads = { navController.navigate(NovaDestinations.SETTINGS_DOWNLOADS) },
+                            onOpenStorage = { navController.navigate(NovaDestinations.SETTINGS_STORAGE) },
+                            onOpenAppUpdates = { navController.navigate(NovaDestinations.SETTINGS_UPDATES) },
+                            onOpenPrivacy = { navController.navigate(NovaDestinations.SETTINGS_PRIVACY) },
+                            onOpenAbout = { navController.navigate(NovaDestinations.SETTINGS_ABOUT) }
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_APPEARANCE) {
+                        AppearanceSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_PLAYBACK) {
+                        PlaybackSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_EQUALIZER) {
+                        AudioEqualizerSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenFullEqualizer = { navController.navigate(NovaDestinations.EQUALIZER) },
+                            onOpenAudioOutput = { showAudioOutputSheet = true },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_HEADPHONES) {
+                        HeadphonesSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenAudioOutput = { showAudioOutputSheet = true },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_NOTIFICATIONS) {
+                        NotificationsSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_LIBRARY) {
+                        LibraryManagementSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_DOWNLOADS) {
+                        DownloadsSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_STORAGE) {
+                        StorageSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_UPDATES) {
+                        AppUpdatesSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_PRIVACY) {
+                        PrivacySettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_ABOUT) {
+                        AboutScreen(
+                            onBack = { navController.popBackStack() },
+                            bottomContentPadding = miniPlayerHeight
                         )
                     }
 
@@ -603,6 +719,16 @@ fun NovaMainAppShell(
                             navController.navigate(NovaDestinations.EQUALIZER)
                         },
                         onOpenLyrics = { song -> lyricsTargetSong = song },
+                        onOpenAlbum = { albumId ->
+                            nowPlayingCollapseProgress = 0f
+                            showNowPlaying = false
+                            navController.navigate(NovaDestinations.albumDetail(albumId))
+                        },
+                        onOpenArtist = { artistName ->
+                            nowPlayingCollapseProgress = 0f
+                            showNowPlaying = false
+                            navController.navigate(NovaDestinations.artistDetail(artistName))
+                        },
                         onCollapseProgress = { progress -> nowPlayingCollapseProgress = progress }
                     )
                 }

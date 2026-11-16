@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Optional semantic version override (e.g., 1.0.2)'
+        description: 'Optional semantic version override (e.g., 1.0.9)'
         required: false
         type: string
       release_version_code:
@@ -84,7 +84,7 @@ jobs:
           fi
 
           if ! [[ "${VERSION_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Invalid versionName '${VERSION_NAME}'. Expected format like 1.0.2 (tag v1.0.2)."
+            echo "::error::Invalid versionName '${VERSION_NAME}'. Expected format like 1.0.9 (tag v1.0.9)."
             exit 1
           fi
 
@@ -631,7 +631,7 @@ jobs:
 
           TMP_APK=$(mktemp /tmp/nova-published-XXXXXX.apk)
           trap 'rm -f "${TMP_APK}"' EXIT
-          curl -fsSL -L -o "${TMP_APK}" "${APK_URL}"
+          curl --retry 5 --retry-delay 3 -fsSL -L -o "${TMP_APK}" "${APK_URL}"
 
           ACTUAL_SHA256=$(sha256sum "${TMP_APK}" | awk '{print $1}')
           if [[ -n "${EXPECTED_SHA256}" && "${ACTUAL_SHA256}" != "${EXPECTED_SHA256}" ]]; then

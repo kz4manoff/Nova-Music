@@ -109,6 +109,24 @@ class PlayerViewModel(
     fun jumpToQueueIndex(index: Int) = playerManager.jumpToQueueIndex(index)
     fun removeFromQueue(index: Int) = playerManager.removeFromQueue(index)
     fun moveQueueItem(from: Int, to: Int) = playerManager.moveQueueItem(from, to)
+    fun playNext(song: Song) = playerManager.playNext(song)
+    fun addToQueue(song: Song) = playerManager.addToQueue(song)
+
+    fun shareSong(context: Context, song: Song) {
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = song.mimeType.ifBlank { "audio/*" }
+            putExtra(Intent.EXTRA_STREAM, song.uri)
+            putExtra(Intent.EXTRA_SUBJECT, song.title)
+            putExtra(Intent.EXTRA_TEXT, "${song.title} — ${song.artist}")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching {
+            val chooser = Intent.createChooser(shareIntent, "Share \"${song.title}\"").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        }
+    }
 
     // Smart Audio Device Management & Output Switching
     fun selectAudioOutput(deviceId: String?): OutputSwitchOutcome = audioOutputManager.selectOutputDevice(deviceId)

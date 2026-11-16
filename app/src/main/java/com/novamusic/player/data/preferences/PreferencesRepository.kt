@@ -65,7 +65,12 @@ data class AppSettings(
     // Library Sorting
     val sortOrder: SortOrder = SortOrder.NAME,
     val sortDirection: SortDirection = SortDirection.ASCENDING,
+    // Headphones & Routing
+    val pauseOnHeadphonesDisconnect: Boolean = true,
+    val resumeOnHeadphonesConnect: Boolean = false,
     // Automatic App Updates
+    val autoCheckUpdates: Boolean = true,
+    val wifiOnlyUpdateDownloads: Boolean = false,
     val lastUpdateCheckMs: Long = 0L,
     val dismissedUpdateVersionCode: Int = 0
 )
@@ -140,6 +145,11 @@ class PreferencesRepository(private val context: Context) {
         val EQ_LOUDNESS = intPreferencesKey("eq_loudness")
         val EQ_PREAMP_DB = floatPreferencesKey("eq_preamp_db")
 
+        val PAUSE_ON_HEADPHONES_DISCONNECT = booleanPreferencesKey("pause_on_headphones_disconnect")
+        val RESUME_ON_HEADPHONES_CONNECT = booleanPreferencesKey("resume_on_headphones_connect")
+
+        val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
+        val WIFI_ONLY_UPDATE_DOWNLOADS = booleanPreferencesKey("wifi_only_update_downloads")
         val LAST_UPDATE_CHECK_MS = longPreferencesKey("last_update_check_ms")
         val DISMISSED_UPDATE_VERSION_CODE = intPreferencesKey("dismissed_update_version_code")
     }
@@ -192,6 +202,10 @@ class PreferencesRepository(private val context: Context) {
                 ?: SortOrder.NAME,
             sortDirection = prefs[Keys.SORT_DIRECTION]?.let { runCatching { SortDirection.valueOf(it) }.getOrNull() }
                 ?: SortDirection.ASCENDING,
+            pauseOnHeadphonesDisconnect = prefs[Keys.PAUSE_ON_HEADPHONES_DISCONNECT] ?: true,
+            resumeOnHeadphonesConnect = prefs[Keys.RESUME_ON_HEADPHONES_CONNECT] ?: false,
+            autoCheckUpdates = prefs[Keys.AUTO_CHECK_UPDATES] ?: true,
+            wifiOnlyUpdateDownloads = prefs[Keys.WIFI_ONLY_UPDATE_DOWNLOADS] ?: false,
             lastUpdateCheckMs = prefs[Keys.LAST_UPDATE_CHECK_MS] ?: 0L,
             dismissedUpdateVersionCode = prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] ?: 0
         )
@@ -389,6 +403,22 @@ class PreferencesRepository(private val context: Context) {
             it[Keys.EQ_LOUDNESS] = state.loudnessGainMillibels
             it[Keys.EQ_PREAMP_DB] = state.preampGainDb
         }
+    }
+
+    suspend fun setPauseOnHeadphonesDisconnect(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.PAUSE_ON_HEADPHONES_DISCONNECT] = enabled }
+    }
+
+    suspend fun setResumeOnHeadphonesConnect(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.RESUME_ON_HEADPHONES_CONNECT] = enabled }
+    }
+
+    suspend fun setAutoCheckUpdates(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_CHECK_UPDATES] = enabled }
+    }
+
+    suspend fun setWifiOnlyUpdateDownloads(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.WIFI_ONLY_UPDATE_DOWNLOADS] = enabled }
     }
 
     suspend fun setLastUpdateCheckMs(timestampMs: Long) {

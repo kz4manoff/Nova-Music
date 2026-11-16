@@ -2,9 +2,14 @@ package com.novamusic.player.service
 
 import android.app.Notification
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.os.Bundle
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -25,6 +30,7 @@ import com.novamusic.player.MainActivity
 import com.novamusic.player.NovaMusicApplication
 import com.novamusic.player.R
 import com.novamusic.player.data.model.AudioFocusBehavior
+import com.novamusic.player.data.model.AudioOutputType
 import com.novamusic.player.data.model.AudioQualityMode
 import com.novamusic.player.data.model.NotificationAppearance
 import com.novamusic.player.data.preferences.AppSettings
@@ -44,6 +50,19 @@ class MusicService : MediaSessionService() {
     @Volatile
     private var currentSettings: AppSettings = AppSettings()
 
+    private val audioBecomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY &&
+                currentSettings.pauseOnHeadphonesDisconnect &&
+                ::exoPlayer.isInitialized &&
+                exoPlayer.playWhenReady
+            ) {
+                exoPlayer.pause()
+            }
+        }
+    }
+    private var noisyReceiverRegistered = false
+
     override fun onCreate() {
         super.onCreate()
         val container = (application as NovaMusicApplication).container
@@ -55,9 +74,17 @@ class MusicService : MediaSessionService() {
 
         exoPlayer = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
-            .setHandleAudioBecomingNoisy(true)
+            .setHandleAudioBecomingNoisy(false)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+
+        ContextCompat.registerReceiver(
+            this,
+            audioBecomingNoisyReceiver,
+            IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+        noisyReceiverRegistered = true
 
         exoPlayer.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -81,6 +108,24 @@ class MusicService : MediaSessionService() {
         serviceScope.launch {
             container.audioOutputManager.preferredAudioDeviceInfo.collectLatest { preferredDevice ->
                 exoPlayer.setPreferredAudioDevice(preferredDevice)
+            }
+        }
+        serviceScope.launch {
+            container.audioOutputManager.externalDeviceConnectedEvents.collect { device ->
+                val isHeadphoneDevice = device.type == AudioOutputType.WIRED_HEADPHONES ||
+                    device.type == AudioOutputType.BLUETOOTH_HEADPHONES ||
+                    device.type == AudioOutputType.USB_AUDIO
+                if (isHeadphoneDevice &&
+                    currentSettings.resumeOnHeadphonesConnect &&
+                    ::exoPlayer.isInitialized &&
+                    exoPlayer.mediaItemCount > 0 &&
+                    !exoPlayer.isPlaying
+                ) {
+                    if (exoPlayer.playbackState == Player.STATE_IDLE) {
+                        exoPlayer.prepare()
+                    }
+                    exoPlayer.play()
+                }
             }
         }
 
@@ -237,6 +282,10 @@ class MusicService : MediaSessionService() {
     override fun onDestroy() {
         val container = (application as NovaMusicApplication).container
         persistCurrentPosition(container)
+        if (noisyReceiverRegistered) {
+            runCatching { unregisterReceiver(audioBecomingNoisyReceiver) }
+            noisyReceiverRegistered = false
+        }
         serviceScope.cancel()
         container.equalizerManager.releaseEffects()
         mediaSession?.run {

@@ -28,6 +28,8 @@ interface UpdatePreferencesStore {
     suspend fun setLastUpdateCheckMs(timestampMs: Long)
     suspend fun getDismissedUpdateVersionCode(): Int
     suspend fun setDismissedUpdateVersionCode(versionCode: Int)
+    suspend fun isAutoCheckUpdatesEnabled(): Boolean = true
+    suspend fun isWifiOnlyDownloadEnabled(): Boolean = false
 }
 
 class RepositoryUpdatePreferencesStore(
@@ -46,6 +48,12 @@ class RepositoryUpdatePreferencesStore(
     override suspend fun setDismissedUpdateVersionCode(versionCode: Int) {
         preferences.setDismissedUpdateVersionCode(versionCode)
     }
+
+    override suspend fun isAutoCheckUpdatesEnabled(): Boolean =
+        preferences.appSettings.first().autoCheckUpdates
+
+    override suspend fun isWifiOnlyDownloadEnabled(): Boolean =
+        preferences.appSettings.first().wifiOnlyUpdateDownloads
 }
 
 class UpdateManager(
@@ -99,6 +107,9 @@ class UpdateManager(
             currentState is UpdateUiState.Verifying ||
             currentState is UpdateUiState.ReadyToInstall
         ) {
+            return
+        }
+        if (!preferencesStore.isAutoCheckUpdatesEnabled()) {
             return
         }
         val lastCheckMs = preferencesStore.getLastUpdateCheckMs()
@@ -265,6 +276,17 @@ class UpdateManager(
     }
 
     private suspend fun executeDownloadAndVerify(config: RemoteUpdateConfig, isMandatory: Boolean) {
+        if (preferencesStore.isWifiOnlyDownloadEnabled() && !networkClient.isUnmeteredNetworkAvailable()) {
+            _uiState.value = UpdateUiState.Error(
+                message = "Wi-Fi only downloads is enabled. Connect to Wi-Fi or turn off Wi-Fi Only in Downloads settings.",
+                canRetryDownload = true,
+                config = config,
+                isMandatory = isMandatory,
+                dialogVisible = true
+            )
+            return
+        }
+
         val destinationFile = File(updatesDir, "NOVA-MUSIC-v${config.latestVersion}.apk")
 
         _uiState.value = UpdateUiState.Downloading(

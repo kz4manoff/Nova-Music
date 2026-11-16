@@ -17,6 +17,7 @@ import java.net.URL
 
 interface UpdateNetworkClient {
     fun isNetworkAvailable(): Boolean
+    fun isUnmeteredNetworkAvailable(): Boolean = isNetworkAvailable()
     suspend fun fetchManifestJson(url: String): String
     suspend fun downloadApk(
         url: String,
@@ -36,6 +37,16 @@ class AndroidUpdateNetworkClient(
         val caps = cm.getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    override fun isUnmeteredNetworkAvailable(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 
     override suspend fun fetchManifestJson(url: String): String = withContext(Dispatchers.IO) {

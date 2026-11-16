@@ -55,23 +55,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
-import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.Style
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -124,7 +116,6 @@ import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.SleepTimerDialog
 import com.novamusic.player.ui.components.SwipeDirection
 import com.novamusic.player.ui.components.TrackInfoDialog
-import com.novamusic.player.ui.components.audioOutputIcon
 import com.novamusic.player.ui.components.novaDirectionalDrag
 import com.novamusic.player.ui.components.rememberNovaHaptic
 import com.novamusic.player.ui.components.resolveHorizontalTrackAction
@@ -143,6 +134,8 @@ fun NowPlayingScreen(
     onCollapse: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenLyrics: (Song) -> Unit,
+    onOpenAlbum: ((Long) -> Unit)? = null,
+    onOpenArtist: ((String) -> Unit)? = null,
     onCollapseProgress: (Float) -> Unit = {}
 ) {
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
@@ -324,102 +317,14 @@ fun NowPlayingScreen(
                     }
                 }
 
-                Box {
-                    LiquidGlassIconButton(
-                        icon = Icons.Rounded.MoreHoriz,
-                        contentDescription = "Player Options",
-                        active = showOptionsMenu,
-                        size = 40.dp,
-                        iconSize = 20.dp,
-                        onClick = { showOptionsMenu = true }
-                    )
-                    DropdownMenu(
-                        expanded = showOptionsMenu,
-                        onDismissRequest = { showOptionsMenu = false },
-                        modifier = Modifier.background(novaColors.elevatedSurface)
-                    ) {
-                        DropdownMenuItem(
-                            leadingIcon = {
-                                val outIcon = audioRoutingState.activeDevice?.let { audioOutputIcon(it.type) }
-                                    ?: Icons.Rounded.Equalizer
-                                Icon(outIcon, contentDescription = null, tint = accent)
-                            },
-                            text = { Text("Audio Output (${audioRoutingState.activeDevice?.name ?: "Speaker"})") },
-                            onClick = {
-                                showOptionsMenu = false
-                                showOutputSheet = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = accent) },
-                            text = { Text(if (isEqEnabled) "Equalizer DSP (Active)" else "Equalizer & DSP") },
-                            onClick = {
-                                showOptionsMenu = false
-                                onOpenEqualizer()
-                            }
-                        )
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = accent) },
-                            text = { Text("Sleep Timer") },
-                            onClick = {
-                                showOptionsMenu = false
-                                showSleepDialog = true
-                            }
-                        )
-                        if (song != null) {
-                            DropdownMenuItem(
-                                leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = accent) },
-                                text = { Text("Add to Playlist") },
-                                onClick = {
-                                    showOptionsMenu = false
-                                    showPlaylistDialog = true
-                                }
-                            )
-                            DropdownMenuItem(
-                                leadingIcon = { Icon(Icons.Rounded.Info, contentDescription = null, tint = accent) },
-                                text = { Text("Audio File Info") },
-                                onClick = {
-                                    showOptionsMenu = false
-                                    viewModel.openTrackInfoDialog(song)
-                                }
-                            )
-                        }
-                        HorizontalDivider(color = novaColors.borderSubtle.copy(alpha = 0.4f))
-                        ArtworkStyle.entries.forEach { style ->
-                            val isSelected = style == artworkStyle
-                            DropdownMenuItem(
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Style,
-                                        contentDescription = null,
-                                        tint = if (isSelected) accent else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                },
-                                text = {
-                                    Text(
-                                        text = style.label,
-                                        color = if (isSelected) accent else MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                trailingIcon = if (isSelected) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = accent,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                } else null,
-                                onClick = {
-                                    viewModel.setArtworkStyle(style)
-                                    showOptionsMenu = false
-                                }
-                            )
-                        }
-                    }
-                }
+                LiquidGlassIconButton(
+                    icon = Icons.Rounded.MoreVert,
+                    contentDescription = "Player Options",
+                    active = showOptionsMenu,
+                    size = 40.dp,
+                    iconSize = 20.dp,
+                    onClick = { showOptionsMenu = true }
+                )
             }
 
             if (song == null) {
@@ -591,6 +496,35 @@ fun NowPlayingScreen(
             song = song,
             fileInfo = trackInfoDialog,
             onDismiss = viewModel::clearTrackInfoDialog
+        )
+    }
+
+    if (showOptionsMenu) {
+        PlayerOptionsBottomSheet(
+            song = song,
+            audioInfo = currentAudioInfo,
+            isFavorite = song != null && song.id in favoriteIds,
+            queueCount = playerState.queue.size,
+            isEqEnabled = isEqEnabled,
+            activeOutputDevice = audioRoutingState.activeDevice,
+            sleepTimerState = playerState.sleepTimer,
+            artworkStyle = artworkStyle,
+            highResArtwork = highResArtwork,
+            onDismiss = { showOptionsMenu = false },
+            onToggleFavorite = { song?.let { viewModel.toggleFavorite(it.id) } },
+            onPlayNext = { song?.let(viewModel::playNext) },
+            onAddToQueue = { song?.let(viewModel::addToQueue) },
+            onOpenQueue = { showQueueSheet = true },
+            onAddToPlaylist = { showPlaylistDialog = true },
+            onOpenLyrics = { song?.let(onOpenLyrics) },
+            onOpenAlbum = onOpenAlbum,
+            onOpenArtist = onOpenArtist,
+            onViewTrackDetails = { song?.let(viewModel::openTrackInfoDialog) },
+            onShare = { song?.let { viewModel.shareSong(context, it) } },
+            onOpenAudioOutput = { showOutputSheet = true },
+            onOpenEqualizer = onOpenEqualizer,
+            onOpenSleepTimer = { showSleepDialog = true },
+            onSelectArtworkStyle = viewModel::setArtworkStyle
         )
     }
 

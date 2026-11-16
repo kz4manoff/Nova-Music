@@ -21,7 +21,9 @@ class UpdateSystemTest {
 
     private class FakePreferencesStore(
         var lastCheckMs: Long = 0L,
-        var dismissedVersionCode: Int = 0
+        var dismissedVersionCode: Int = 0,
+        var autoCheckEnabled: Boolean = true,
+        var wifiOnlyEnabled: Boolean = false
     ) : UpdatePreferencesStore {
         override suspend fun getLastUpdateCheckMs(): Long = lastCheckMs
         override suspend fun setLastUpdateCheckMs(timestampMs: Long) {
@@ -32,6 +34,9 @@ class UpdateSystemTest {
         override suspend fun setDismissedUpdateVersionCode(versionCode: Int) {
             dismissedVersionCode = versionCode
         }
+
+        override suspend fun isAutoCheckUpdatesEnabled(): Boolean = autoCheckEnabled
+        override suspend fun isWifiOnlyDownloadEnabled(): Boolean = wifiOnlyEnabled
     }
 
     private class FakeClock(var currentMs: Long = 1_700_000_000_000L) : UpdateClock {
@@ -40,6 +45,7 @@ class UpdateSystemTest {
 
     private class FakeNetworkClient(
         var networkAvailable: Boolean = true,
+        var unmeteredAvailable: Boolean = true,
         var manifestJsonResponse: Result<String> = Result.success("{}"),
         var downloadBehavior: (url: String, dest: File, onProgress: (Long, Long) -> Unit) -> File =
             { _, dest, onProgress ->
@@ -51,6 +57,7 @@ class UpdateSystemTest {
             }
     ) : UpdateNetworkClient {
         override fun isNetworkAvailable(): Boolean = networkAvailable
+        override fun isUnmeteredNetworkAvailable(): Boolean = networkAvailable && unmeteredAvailable
 
         override suspend fun fetchManifestJson(url: String): String =
             manifestJsonResponse.getOrThrow()
@@ -509,6 +516,95 @@ class UpdateSystemTest {
         val olderRemote = manager.uiState.value as UpdateUiState.UpToDate
         assertEquals(4, olderRemote.installedVersionCode)
         assertEquals("1.0.3", olderRemote.installedVersionName)
+        assertFalse(olderRemote.showConfirmationDialog)
+    }
+
+    // 14. Auto-check disabled and Wi-Fi-only download setting enforcement
+    @Test
+    fun `autoCheckUpdates disabled skips periodic check and wifiOnly blocks metered download`() = runBlocking {
+        val prefs = FakePreferencesStore(
+            lastCheckMs = 0L,
+            autoCheckEnabled = false,
+            wifiOnlyEnabled = true
+        )
+        val network = FakeNetworkClient(
+            networkAvailable = true,
+            unmeteredAvailable = false,
+            manifestJsonResponse = Result.success(validManifestJson(version = "1.0.4", versionCode = 5))
+        )
+        val manager = createManager(
+            prefs = prefs,
+            network = network,
+            installedVersionCode = 4,
+            installedVersionName = "1.0.3"
+        )
+
+        // Periodic background check skipped when autoCheckEnabled is false
+        manager.checkIfIntervalElapsed()
+        assertEquals(UpdateUiState.Idle, manager.uiState.value)
+
+        // Manual check still works
+        manager.checkForUpdatesNow(manual = true)
+        val available = manager.uiState.value as UpdateUiState.Available
+        assertEquals(5, available.config.versionCode)
+
+        // Wi-Fi only download refuses metered cellular network cleanly
+        manager.downloadAndVerifyNow(available.config, isMandatory = false)
+        val wifiError = manager.uiState.value as UpdateUiState.Error
+        assertTrue(wifiError.canRetryDownload)
+        assertTrue(wifiError.message.contains("Wi-Fi", ignoreCase = true))
+    }
+
+    // 15. Upgrade path 1.0.3 (4) -> 1.0.9 (10) and up-to-date check when 1.0.9 (10) is installed
+    @Test
+    fun `upgrade from 1_0_3 to 1_0_9 offers update and installed 1_0_9 reports up to date`() = runBlocking {
+        val manifest109 = validManifestJson(
+            version = "1.0.9",
+            versionCode = 10,
+            apkUrl = "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.9/NOVA-MUSIC-v1.0.9.apk"
+        )
+        assertTrue(
+            UpdateEvaluator.isTrustedApkUrl(
+                "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.9/NOVA-MUSIC-v1.0.9.apk"
+            )
+        )
+
+        // Installed 1.0.3 (versionCode 4) detects 1.0.9 (versionCode 10)
+        val legacyManager = createManager(
+            network = FakeNetworkClient(manifestJsonResponse = Result.success(manifest109)),
+            installedVersionCode = 4,
+            installedVersionName = "1.0.3"
+        )
+        legacyManager.checkForUpdatesNow(manual = true)
+        val available = legacyManager.uiState.value as UpdateUiState.Available
+        assertEquals("1.0.9", available.config.latestVersion)
+        assertEquals(10, available.config.versionCode)
+        assertFalse(available.isMandatory)
+
+        // Installed 1.0.9 (versionCode 10) reports UpToDate against 1.0.9 (10) and 1.0.3 (4)
+        val network = FakeNetworkClient(manifestJsonResponse = Result.success(manifest109))
+        val currentManager = createManager(
+            network = network,
+            installedVersionCode = 10,
+            installedVersionName = "1.0.9"
+        )
+        currentManager.checkForUpdatesNow(manual = true)
+        val upToDate = currentManager.uiState.value as UpdateUiState.UpToDate
+        assertEquals(10, upToDate.installedVersionCode)
+        assertEquals("1.0.9", upToDate.installedVersionName)
+        assertTrue(upToDate.showConfirmationDialog)
+
+        network.manifestJsonResponse = Result.success(
+            validManifestJson(
+                version = "1.0.3",
+                versionCode = 4,
+                apkUrl = "https://github.com/kz4manoff/Nova-Music/releases/download/v1.0.3/NOVA-MUSIC-v1.0.3.apk"
+            )
+        )
+        currentManager.checkForUpdatesNow(manual = false)
+        val olderRemote = currentManager.uiState.value as UpdateUiState.UpToDate
+        assertEquals(10, olderRemote.installedVersionCode)
+        assertEquals("1.0.9", olderRemote.installedVersionName)
         assertFalse(olderRemote.showConfirmationDialog)
     }
 

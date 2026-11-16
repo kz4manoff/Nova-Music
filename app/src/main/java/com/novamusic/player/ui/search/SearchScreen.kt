@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -47,6 +48,7 @@ import com.novamusic.player.ui.components.LiquidGlassTopBar
 import com.novamusic.player.ui.components.SongListItem
 import com.novamusic.player.ui.components.SongOptionsBottomSheet
 import com.novamusic.player.ui.components.TrackInfoDialog
+import com.novamusic.player.ui.components.shareAudioTrack
 import com.novamusic.player.ui.library.LibraryViewModel
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 
@@ -62,6 +64,7 @@ fun SearchScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val selectedTrackInfo by viewModel.selectedTrackInfo.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val palette = LocalArtworkPalette.current
     val accent = MaterialTheme.colorScheme.primary
 
@@ -303,7 +306,10 @@ fun SearchScreen(
             onAddToPlaylist = { addToPlaylistSong = song },
             onToggleFavorite = { viewModel.toggleFavorite(song.id) },
             onViewLyrics = { onOpenLyricsForSong(song) },
-            onViewInfo = { viewModel.loadTrackInfo(song) }
+            onViewInfo = { viewModel.loadTrackInfo(song) },
+            onGoToAlbum = { onOpenAlbum(song.albumId) },
+            onGoToArtist = { onOpenArtist(song.artist) },
+            onShare = { shareAudioTrack(context, song) }
         )
     }
 

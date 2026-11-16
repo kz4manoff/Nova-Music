@@ -1,6 +1,9 @@
 package com.novamusic.player.ui.components
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -8,27 +11,34 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bedtime
@@ -38,9 +48,11 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -331,6 +344,196 @@ fun MiniPlayer(
     )
 }
 
+fun shareAudioTrack(context: Context, song: Song) {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = song.mimeType.ifBlank { "audio/*" }
+        putExtra(Intent.EXTRA_STREAM, song.uri)
+        putExtra(Intent.EXTRA_SUBJECT, song.title)
+        putExtra(Intent.EXTRA_TEXT, "${song.title} — ${song.artist}")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    runCatching {
+        val chooser = Intent.createChooser(shareIntent, "Share \"${song.title}\"").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
+    }
+}
+
+@Composable
+fun NovaSheetSectionLabel(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = text.uppercase(),
+        style = NovaMonoTelemetry.copy(
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.0.sp
+        ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+        modifier = modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+    )
+}
+
+@Composable
+fun NovaSheetGroupCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    LiquidGlassSurface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        elevation = 4.dp,
+        glassOpacity = 0.84f,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            content = content
+        )
+    }
+}
+
+@Composable
+fun NovaSheetDivider() {
+    val novaColors = LocalNovaColors.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 54.dp, end = 10.dp)
+            .height(0.55.dp)
+            .background(novaColors.borderSubtle.copy(alpha = 0.34f))
+    )
+}
+
+@Composable
+fun NovaSheetActionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    trailingBadge: String? = null,
+    highlighted: Boolean = false,
+    showChevron: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val novaColors = LocalNovaColors.current
+    val reducedMotion = LocalReducedMotion.current
+    val performHaptic = rememberNovaHaptic()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && !reducedMotion && enabled) 0.982f else 1f,
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.78f, stiffness = 500f),
+        label = "sheet_row_scale"
+    )
+    val pressBg by animateColorAsState(
+        targetValue = if (isPressed && enabled) {
+            accent.copy(alpha = if (novaColors.isLight) 0.08f else 0.12f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(130),
+        label = "sheet_row_bg"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .background(pressBg)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    performHaptic()
+                    onClick()
+                }
+            )
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(
+                    if (highlighted) accent.copy(alpha = 0.16f)
+                    else novaColors.recessedSurface.copy(alpha = if (novaColors.isLight) 0.92f else 0.78f)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (highlighted) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+                modifier = Modifier.size(19.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = if (highlighted) accent else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        if (!trailingBadge.isNullOrBlank()) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(
+                        if (highlighted) accent.copy(alpha = 0.14f)
+                        else novaColors.recessedSurface.copy(alpha = 0.92f)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = trailingBadge,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                    color = if (highlighted && !novaColors.isLight) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        if (showChevron) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SongOptionsBottomSheet(
@@ -342,121 +545,172 @@ fun SongOptionsBottomSheet(
     onAddToPlaylist: () -> Unit,
     onToggleFavorite: () -> Unit,
     onViewLyrics: () -> Unit,
-    onViewInfo: () -> Unit
+    onViewInfo: () -> Unit,
+    onGoToAlbum: (() -> Unit)? = null,
+    onGoToArtist: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null
 ) {
+    val accent = MaterialTheme.colorScheme.primary
+    val performHaptic = rememberNovaHaptic()
+    var actionDispatched by remember { mutableStateOf(false) }
+
+    val runSingleAction: (() -> Unit) -> Unit = { action ->
+        if (!actionDispatched) {
+            actionDispatched = true
+            onDismiss()
+            action()
+        }
+    }
+
     LiquidGlassSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 26.dp)
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // Track Identity Header Card
+            LiquidGlassSurface(
+                shape = RoundedCornerShape(22.dp),
+                elevation = 6.dp,
+                glassOpacity = 0.90f,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                LiquidGlassArtwork(
-                    artworkUri = song.artworkUri,
-                    contentDescription = song.album,
-                    modifier = Modifier.size(58.dp),
-                    shape = RoundedCornerShape(15.dp),
-                    shadowElevation = 14.dp
-                )
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = song.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LiquidGlassArtwork(
+                        artworkUri = song.artworkUri,
+                        contentDescription = song.album,
+                        modifier = Modifier.size(54.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        shadowElevation = 10.dp
                     )
-                    Text(
-                        text = "${song.artist} • ${song.album}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${song.fileExtension.ifBlank { "AUDIO" }} • ${FormatUtils.formatDuration(song.durationMs)}",
-                        style = NovaMonoTelemetry,
-                        color = MaterialTheme.colorScheme.primary
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = song.title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${song.artist} • ${song.album}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${song.fileExtension.ifBlank { "AUDIO" }} • ${FormatUtils.formatDuration(song.durationMs)}",
+                            style = NovaMonoTelemetry.copy(fontSize = 10.5.sp),
+                            color = accent,
+                            maxLines = 1
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    LiquidGlassIconButton(
+                        icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        contentDescription = if (isFavorite) "Remove from Favorites" else "Add to Favorites",
+                        active = isFavorite,
+                        size = 38.dp,
+                        iconSize = 19.dp,
+                        tint = if (isFavorite) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                        onClick = {
+                            performHaptic()
+                            runSingleAction(onToggleFavorite)
+                        }
                     )
                 }
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-                thickness = 0.6.dp,
-                color = LocalNovaColors.current.borderSubtle.copy(alpha = 0.5f)
-            )
+            // Playback & Queue Group
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                NovaSheetSectionLabel("Queue & Library")
+                NovaSheetGroupCard {
+                    NovaSheetActionRow(
+                        icon = Icons.Rounded.PlaylistPlay,
+                        title = "Play Next",
+                        subtitle = "Queue right after the current track",
+                        onClick = { runSingleAction(onPlayNext) }
+                    )
+                    NovaSheetDivider()
+                    NovaSheetActionRow(
+                        icon = Icons.Rounded.QueueMusic,
+                        title = "Add to Queue",
+                        subtitle = "Append to the end of playing queue",
+                        onClick = { runSingleAction(onAddToQueue) }
+                    )
+                    NovaSheetDivider()
+                    NovaSheetActionRow(
+                        icon = Icons.Rounded.PlaylistAdd,
+                        title = "Add to Playlist",
+                        subtitle = "Save track to a playlist",
+                        showChevron = true,
+                        onClick = { runSingleAction(onAddToPlaylist) }
+                    )
+                    NovaSheetDivider()
+                    NovaSheetActionRow(
+                        icon = Icons.Rounded.Lyrics,
+                        title = "View Lyrics",
+                        subtitle = "Open synchronized lyrics & LRC editor",
+                        showChevron = true,
+                        onClick = { runSingleAction(onViewLyrics) }
+                    )
+                }
+            }
 
-            SheetActionItem(Icons.Rounded.PlaylistPlay, "Play Next") {
-                onPlayNext()
-                onDismiss()
-            }
-            SheetActionItem(Icons.Rounded.QueueMusic, "Add to Queue") {
-                onAddToQueue()
-                onDismiss()
-            }
-            SheetActionItem(Icons.Rounded.PlaylistAdd, "Add to Playlist") {
-                onDismiss()
-                onAddToPlaylist()
-            }
-            SheetActionItem(
-                if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                if (isFavorite) "Remove from Favorites" else "Add to Favorites"
-            ) {
-                onToggleFavorite()
-                onDismiss()
-            }
-            SheetActionItem(Icons.Rounded.Lyrics, "View Lyrics") {
-                onDismiss()
-                onViewLyrics()
-            }
-            SheetActionItem(Icons.Rounded.Info, "Audio File Information") {
-                onDismiss()
-                onViewInfo()
+            // Navigate, Details & Share Group
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                NovaSheetSectionLabel("Track & Info")
+                NovaSheetGroupCard {
+                    if (onGoToAlbum != null && song.id > 0L && song.albumId > 0L) {
+                        NovaSheetActionRow(
+                            icon = Icons.Rounded.Album,
+                            title = "Go to Album",
+                            subtitle = song.album,
+                            showChevron = true,
+                            onClick = { runSingleAction(onGoToAlbum) }
+                        )
+                        NovaSheetDivider()
+                    }
+                    if (onGoToArtist != null && song.id > 0L && song.artist.isNotBlank()) {
+                        NovaSheetActionRow(
+                            icon = Icons.Rounded.Person,
+                            title = "Go to Artist",
+                            subtitle = song.artist,
+                            showChevron = true,
+                            onClick = { runSingleAction(onGoToArtist) }
+                        )
+                        NovaSheetDivider()
+                    }
+                    NovaSheetActionRow(
+                        icon = Icons.Rounded.Info,
+                        title = "View Track Details",
+                        subtitle = "Format, bitrate, sample rate & file path",
+                        showChevron = true,
+                        onClick = { runSingleAction(onViewInfo) }
+                    )
+                    if (onShare != null) {
+                        NovaSheetDivider()
+                        NovaSheetActionRow(
+                            icon = Icons.Rounded.Share,
+                            title = "Share",
+                            subtitle = "Send audio track via system share sheet",
+                            showChevron = true,
+                            onClick = { runSingleAction(onShare) }
+                        )
+                    }
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun SheetActionItem(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-                .border(0.6.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(19.dp)
-            )
-        }
-        Spacer(modifier = Modifier.width(14.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.colorScheme.onSurface
-        )
     }
 }
 

@@ -1,6 +1,10 @@
 package com.novamusic.player.ui.settings
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.ViewModel
@@ -19,14 +23,19 @@ import com.novamusic.player.data.model.EqualizerState
 import com.novamusic.player.data.model.MusicFolder
 import com.novamusic.player.data.model.NavBarAppearance
 import com.novamusic.player.data.model.NotificationAppearance
+import com.novamusic.player.data.model.OutputSwitchOutcome
 import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.data.model.RescanInterval
+import com.novamusic.player.data.model.SortDirection
+import com.novamusic.player.data.model.SortOrder
 import com.novamusic.player.data.model.ThemeMode
 import com.novamusic.player.data.preferences.AppSettings
 import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.database.entities.CustomPresetEntity
+import com.novamusic.player.update.AndroidApkInstaller
+import com.novamusic.player.update.UpdateConfig
 import com.novamusic.player.update.UpdateManager
 import com.novamusic.player.update.UpdateUiState
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +48,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+
+data class DownloadedUpdateFileInfo(
+    val name: String,
+    val sizeBytes: Long,
+    val lastModifiedMs: Long
+)
 
 class SettingsViewModel(
     private val context: Context,
@@ -71,19 +86,47 @@ class SettingsViewModel(
     val totalLibraryBytes: StateFlow<Long> = repository.totalLibraryBytes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
+    private val apkInstaller = AndroidApkInstaller(context.applicationContext)
+
     private val _cacheSizeBytes = MutableStateFlow(0L)
     val cacheSizeBytes: StateFlow<Long> = _cacheSizeBytes.asStateFlow()
 
+    private val _updateDownloadsSizeBytes = MutableStateFlow(0L)
+    val updateDownloadsSizeBytes: StateFlow<Long> = _updateDownloadsSizeBytes.asStateFlow()
+
+    private val _downloadedUpdateFiles = MutableStateFlow<List<DownloadedUpdateFileInfo>>(emptyList())
+    val downloadedUpdateFiles: StateFlow<List<DownloadedUpdateFileInfo>> = _downloadedUpdateFiles.asStateFlow()
+
+    val updatesFolderLabel: String = "Internal App Files/${UpdateConfig.UPDATES_SUBDIR}"
+
     init {
-        refreshCacheSize()
+        refreshStorageStats()
     }
 
-    fun refreshCacheSize() {
+    fun refreshCacheSize() = refreshStorageStats()
+
+    fun refreshStorageStats() {
         viewModelScope.launch {
-            val bytes = withContext(Dispatchers.IO) {
-                directorySizeBytes(context.cacheDir) + directorySizeBytes(context.codeCacheDir)
+            val (cacheBytes, updatesBytes, updateFiles) = withContext(Dispatchers.IO) {
+                val cBytes = directorySizeBytes(context.cacheDir) + directorySizeBytes(context.codeCacheDir)
+                val updatesDir = File(context.filesDir, UpdateConfig.UPDATES_SUBDIR)
+                val uBytes = directorySizeBytes(updatesDir)
+                val files = updatesDir.listFiles()
+                    ?.filter { it.isFile && (it.name.endsWith(".apk") || it.name.endsWith(".part")) }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.map {
+                        DownloadedUpdateFileInfo(
+                            name = it.name,
+                            sizeBytes = it.length(),
+                            lastModifiedMs = it.lastModified()
+                        )
+                    }
+                    ?: emptyList()
+                Triple(cBytes, uBytes, files)
             }
-            _cacheSizeBytes.value = bytes
+            _cacheSizeBytes.value = cacheBytes
+            _updateDownloadsSizeBytes.value = updatesBytes
+            _downloadedUpdateFiles.value = updateFiles
         }
     }
 
@@ -236,6 +279,10 @@ class SettingsViewModel(
         viewModelScope.launch { preferences.setHighResArtwork(enabled) }
     }
 
+    fun setSort(order: SortOrder, direction: SortDirection) {
+        viewModelScope.launch { preferences.setSort(order, direction) }
+    }
+
     @OptIn(ExperimentalCoilApi::class)
     fun clearCache() {
         viewModelScope.launch {
@@ -247,7 +294,21 @@ class SettingsViewModel(
                 }
                 context.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
             }
-            refreshCacheSize()
+            refreshStorageStats()
+        }
+    }
+
+    fun clearUpdateDownloads() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val updatesDir = File(context.filesDir, UpdateConfig.UPDATES_SUBDIR)
+                updatesDir.listFiles()?.forEach { file ->
+                    if (file.isFile) {
+                        file.delete()
+                    }
+                }
+            }
+            refreshStorageStats()
         }
     }
 
@@ -255,7 +316,47 @@ class SettingsViewModel(
         viewModelScope.launch { repository.clearPlaybackHistory() }
     }
 
-    // 6. Notifications
+    // 6. Headphones & Routing
+    fun setPauseOnHeadphonesDisconnect(enabled: Boolean) {
+        viewModelScope.launch { preferences.setPauseOnHeadphonesDisconnect(enabled) }
+    }
+
+    fun setResumeOnHeadphonesConnect(enabled: Boolean) {
+        viewModelScope.launch { preferences.setResumeOnHeadphonesConnect(enabled) }
+    }
+
+    fun refreshAudioDevices() = audioOutputManager.refreshPermissionsAndDevices()
+
+    fun selectAudioOutput(deviceId: String?): OutputSwitchOutcome =
+        audioOutputManager.selectOutputDevice(deviceId)
+
+    fun openSystemSoundOutputPanel(activityContext: Context) {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Intent(Settings.Panel.ACTION_VOLUME)
+        } else {
+            Intent(Settings.ACTION_SOUND_SETTINGS)
+        }.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { activityContext.startActivity(intent) }
+            .onFailure {
+                runCatching {
+                    activityContext.startActivity(
+                        Intent(Settings.ACTION_SOUND_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+    }
+
+    fun openBluetoothSettings(activityContext: Context) {
+        runCatching {
+            activityContext.startActivity(
+                Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+
+    // 7. Notifications
     fun setNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch { preferences.setNotificationsEnabled(enabled) }
     }
@@ -272,7 +373,33 @@ class SettingsViewModel(
         viewModelScope.launch { preferences.setNotificationAppearance(appearance) }
     }
 
-    // 7. App Updates
+    fun openAppNotificationSettings(activityContext: Context) {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, activityContext.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { activityContext.startActivity(intent) }.onFailure {
+            openAppDetailsSettings(activityContext)
+        }
+    }
+
+    fun openAppDetailsSettings(activityContext: Context) {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", activityContext.packageName, null)
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { activityContext.startActivity(intent) }
+    }
+
+    // 8. App Updates & Downloads
+    fun setAutoCheckUpdates(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoCheckUpdates(enabled) }
+    }
+
+    fun setWifiOnlyUpdateDownloads(enabled: Boolean) {
+        viewModelScope.launch { preferences.setWifiOnlyUpdateDownloads(enabled) }
+    }
+
     fun checkForUpdates() {
         updateManager.checkForUpdatesManual()
     }
@@ -280,4 +407,16 @@ class SettingsViewModel(
     fun reopenUpdateDialog() {
         updateManager.reopenAvailableDialog()
     }
+
+    fun startUpdateDownload() {
+        updateManager.startDownload()
+    }
+
+    fun cancelUpdateDownload() {
+        updateManager.cancelDownload()
+    }
+
+    fun canRequestPackageInstalls(): Boolean = apkInstaller.canRequestPackageInstalls()
+
+    fun buildInstallPermissionIntent(): Intent = updateManager.buildInstallPermissionIntent()
 }
