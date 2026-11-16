@@ -13,19 +13,19 @@ export const LiquidGlassBackdrop: React.FC<{
   return (
     <div
       className={`pointer-events-none fixed inset-0 -z-10 overflow-hidden transition-colors duration-300 ${
-        isLight ? 'bg-[#F1F4F9]' : 'bg-[#050507]'
+        isLight ? 'bg-[#F1F4F9]' : 'bg-black'
       }`}
       aria-hidden="true"
     >
-      {/* Live Blurred Album Artwork Layer */}
+      {/* Subtle Live Blurred Album Artwork Refraction Layer */}
       <img
         src={artwork}
         alt=""
         referrerPolicy="no-referrer"
         className="absolute inset-0 h-full w-full scale-125 object-cover transition-all duration-700"
         style={{
-          filter: `blur(${intense ? 78 : 68}px) saturate(${isPlaying ? 1.45 : 1.15})`,
-          opacity: isLight ? (intense ? 0.34 : 0.24) : intense ? 0.48 : 0.34,
+          filter: `blur(${intense ? 82 : 72}px) saturate(${isPlaying ? 1.35 : 1.05})`,
+          opacity: isLight ? (intense ? 0.34 : 0.24) : intense ? 0.38 : 0.22,
         }}
       />
 
@@ -33,25 +33,25 @@ export const LiquidGlassBackdrop: React.FC<{
       <div
         className="absolute -left-24 -top-24 h-[460px] w-[460px] rounded-full transition-transform duration-1000"
         style={{
-          background: `radial-gradient(circle, ${accent.hex}${isLight ? '38' : '42'} 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${accent.hex}${isLight ? '38' : '24'} 0%, transparent 70%)`,
           transform: isPlaying ? 'scale(1.12)' : 'scale(0.95)',
         }}
       />
       <div
         className="absolute -bottom-28 -right-20 h-[440px] w-[440px] rounded-full transition-transform duration-1000"
         style={{
-          background: `radial-gradient(circle, ${accent.glow}${isLight ? '30' : '2A'} 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${accent.glow}${isLight ? '30' : '1E'} 0%, transparent 70%)`,
           transform: isPlaying ? 'scale(1.08)' : 'scale(0.92)',
         }}
       />
 
-      {/* Atmospheric Readability Veil */}
+      {/* Pure Black Deep Atmospheric Veil */}
       <div
         className="absolute inset-0"
         style={{
           background: isLight
             ? 'linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(241,244,249,0.68) 50%, rgba(241,244,249,0.92) 100%)'
-            : 'linear-gradient(180deg, rgba(6,6,9,0.46) 0%, rgba(6,6,9,0.58) 52%, rgba(5,5,7,0.88) 100%)',
+            : 'linear-gradient(180deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.78) 52%, rgba(0,0,0,0.96) 100%)',
         }}
       />
     </div>
@@ -68,18 +68,18 @@ export const LiquidGlassCard: React.FC<{
   const interactive = Boolean(onClick);
   const style: React.CSSProperties = highlighted
     ? {
-        borderColor: `${accentHex}88`,
-        boxShadow: `0 14px 36px -12px ${accentHex}40, inset 0 1px 0 0 rgba(255,255,255,0.28)`,
+        borderColor: `${accentHex}7A`,
+        boxShadow: `0 16px 38px -12px ${accentHex}38, inset 0 1px 0 0 rgba(255,255,255,0.24)`,
       }
     : {
-        boxShadow: '0 14px 36px -14px rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.22)',
+        boxShadow: '0 16px 38px -14px rgba(0, 0, 0, 0.55), inset 0 1px 0 0 rgba(255, 255, 255, 0.18)',
       };
 
-  const baseClasses = `relative overflow-hidden rounded-3xl border backdrop-blur-2xl transition-all duration-200 ${
+  const baseClasses = `relative overflow-hidden rounded-3xl border backdrop-blur-2xl backdrop-saturate-150 transition-all duration-200 ${
     highlighted
-      ? 'bg-white/85 dark:bg-[#1E202A]/78'
-      : 'bg-white/75 border-white/80 dark:bg-[#14151D]/68 dark:border-white/15'
-  } ${interactive ? 'cursor-pointer hover:bg-white/90 dark:hover:bg-[#1B1D27]/82 active:scale-[0.985]' : ''} ${className}`;
+      ? 'bg-white/85 dark:bg-white/[0.08]'
+      : 'bg-white/75 border-white/80 dark:bg-white/[0.05] dark:border-white/[0.15]'
+  } ${interactive ? 'cursor-pointer hover:bg-white/90 dark:hover:bg-white/[0.09] active:scale-[0.985]' : ''} ${className}`;
 
   if (onClick) {
     return (

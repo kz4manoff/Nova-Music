@@ -5,26 +5,22 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Disc,
+  ArrowLeft,
   Heart,
-  Home,
   Library,
-  ListMusic,
-  Maximize2,
   Pause,
   Play,
   Plus,
   Search,
-  Settings,
   Shuffle,
   SkipBack,
-  SkipForward,
   SlidersHorizontal,
   Trash2,
   X,
 } from 'lucide-react';
 import { buildProceduralTrackWavUrl, NovaWebAudioPipeline } from './audio/webAudioEngine';
 import { EqualizerView } from './components/EqualizerView';
+import { GlassNavigationDock } from './components/GlassNavigationDock';
 import { LibraryView, SongRowCard } from './components/LibraryView';
 import {
   LiquidGlassBackdrop,
@@ -33,6 +29,7 @@ import {
   LiquidGlassIconButton,
 } from './components/LiquidGlass';
 import { NowPlayingOverlay } from './components/NowPlayingOverlay';
+import { RecitersView, SearchView } from './components/RecitersAndSearchViews';
 import { SettingsView } from './components/SettingsView';
 import {
   ACCENT_OPTIONS,
@@ -387,16 +384,8 @@ export default function App() {
     [tracks, favoriteIds]
   );
 
-  const navTabs: { id: AppTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'library', label: 'Library', icon: Library },
-    { id: 'playlists', label: 'Playlists', icon: ListMusic },
-    { id: 'equalizer', label: 'Equalizer', icon: SlidersHorizontal },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
-
   const safeDuration = Math.max(duration || currentTrack.durationSec, 1);
-  const miniProgress = Math.min(100, Math.max(0, (currentTime / safeDuration) * 100));
+  const miniProgressFraction = Math.min(1, Math.max(0, currentTime / safeDuration));
 
   return (
     <div className="relative min-h-screen text-slate-900 transition-colors duration-300 dark:text-[#F5F7FA]">
@@ -413,7 +402,7 @@ export default function App() {
         onEnded={handleTrackEnded}
       />
 
-      {/* Dynamic Live Blurred Album Artwork + Ambient Liquid Glass Backdrop */}
+      {/* Dynamic Live Blurred Album Artwork + Pure Black Glassmorphism Backdrop */}
       <LiquidGlassBackdrop
         artwork={currentTrack.artwork}
         isPlaying={isPlaying}
@@ -421,56 +410,47 @@ export default function App() {
         theme={theme}
       />
 
-      {/* Top Navigation Bar (3-zone contract: Brand — Nav Links — Primary Action) */}
-      <header className="sticky top-0 z-30 mx-auto max-w-6xl px-4 pt-3 sm:px-6">
-        <LiquidGlassCard className="px-4 py-2.5 sm:px-6">
-          <div className="flex items-center justify-between gap-8">
+      {/* Minimalist Top Bar (Brand — Quick Equalizer / Now Playing) */}
+      <header className="mx-auto max-w-6xl px-4 pt-3.5 pb-1 sm:px-6">
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-900/10 bg-white/75 px-4 py-2.5 backdrop-blur-2xl dark:border-white/[0.15] dark:bg-white/[0.04]">
+          <button
+            type="button"
+            onClick={() => setActiveTab('home')}
+            className="whitespace-nowrap shrink-0 text-left text-base font-bold tracking-tight text-slate-900 dark:text-white"
+          >
+            NOVA <span style={{ color: accent.hex }}>MUSIC</span>
+          </button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <LiquidGlassIconButton
+              label="Equalizer DSP"
+              active={activeTab === 'equalizer'}
+              accentHex={accent.hex}
+              sizeClass="h-10 w-10"
+              onClick={() => setActiveTab('equalizer')}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </LiquidGlassIconButton>
+
             <button
               type="button"
-              onClick={() => setActiveTab('home')}
-              className="whitespace-nowrap shrink-0 text-left text-lg font-bold tracking-tight text-slate-900 dark:text-white"
+              onClick={() => setShowNowPlaying(true)}
+              className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap shrink-0 rounded-full border border-white/20 bg-white/10 px-3.5 text-xs font-semibold text-slate-900 transition-colors hover:bg-white/20 dark:text-white"
             >
-              NOVA <span style={{ color: accent.hex }}>MUSIC</span>
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span>Player</span>
             </button>
-
-            <nav className="hidden items-center gap-6 md:flex" aria-label="Main navigation">
-              {navTabs.map((tab) => {
-                const active = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    style={active ? { color: accent.hex } : undefined}
-                    className={`whitespace-nowrap shrink-0 border-b-2 py-1 text-sm font-semibold transition-colors ${
-                      active
-                        ? 'border-current'
-                        : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="shrink-0">
-              <LiquidGlassButton highlighted accent={accent} onClick={() => setShowNowPlaying(true)}>
-                <Play className="h-4 w-4 fill-current" />
-                <span>Now Playing</span>
-              </LiquidGlassButton>
-            </div>
           </div>
-        </LiquidGlassCard>
+        </div>
       </header>
 
       {/* Main Scrollable Viewport */}
-      <main className="mx-auto max-w-6xl px-4 pt-5 pb-44 sm:px-6 md:pb-32">
+      <main className="mx-auto max-w-6xl px-4 pt-4 pb-44 sm:px-6 sm:pb-48">
         {activeTab === 'home' && (
           <div className="space-y-6">
             {/* Search Launcher */}
             <LiquidGlassCard
-              onClick={() => setActiveTab('library')}
+              onClick={() => setActiveTab('search')}
               className="px-4 py-3.5"
             >
               <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
@@ -657,8 +637,22 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'library' && (
-          <LibraryView
+        {activeTab === 'reciters' && (
+          <RecitersView
+            tracks={tracks}
+            currentTrackId={currentTrack.id}
+            isPlaying={isPlaying}
+            favoriteIds={favoriteIds}
+            accent={accent}
+            onPlayTrack={startPlaybackForTrack}
+            onToggleFavorite={handleToggleFavorite}
+            onAddToPlaylist={(song) => setPlaylistTargetTrack(song)}
+            onOpenFullLibrary={() => setActiveTab('library')}
+          />
+        )}
+
+        {activeTab === 'search' && (
+          <SearchView
             tracks={tracks}
             currentTrackId={currentTrack.id}
             isPlaying={isPlaying}
@@ -668,9 +662,34 @@ export default function App() {
             onSearchChange={setSearchQuery}
             onPlayTrack={startPlaybackForTrack}
             onToggleFavorite={handleToggleFavorite}
-            onImportFiles={handleImportLocalFiles}
-            onAddTrackToPlaylistPrompt={(song) => setPlaylistTargetTrack(song)}
+            onAddToPlaylist={(song) => setPlaylistTargetTrack(song)}
           />
+        )}
+
+        {activeTab === 'library' && (
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={() => setActiveTab('reciters')}
+              className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 text-xs font-semibold text-slate-900 transition-colors hover:bg-white/15 dark:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Reciters</span>
+            </button>
+            <LibraryView
+              tracks={tracks}
+              currentTrackId={currentTrack.id}
+              isPlaying={isPlaying}
+              favoriteIds={favoriteIds}
+              searchQuery={searchQuery}
+              accent={accent}
+              onSearchChange={setSearchQuery}
+              onPlayTrack={startPlaybackForTrack}
+              onToggleFavorite={handleToggleFavorite}
+              onImportFiles={handleImportLocalFiles}
+              onAddTrackToPlaylistPrompt={(song) => setPlaylistTargetTrack(song)}
+            />
+          </div>
         )}
 
         {activeTab === 'playlists' && (
@@ -834,47 +853,57 @@ export default function App() {
         )}
 
         {activeTab === 'equalizer' && (
-          <EqualizerView
-            enabled={eqEnabled}
-            bandsDb={bandsDb}
-            preampDb={preampDb}
-            bassBoostPct={bassBoostPct}
-            loudnessDb={loudnessDb}
-            activePresetName={activePresetName}
-            customPresets={customPresets}
-            spectrumBars={spectrumBars}
-            isPlaying={isPlaying}
-            accent={accent}
-            onToggleEnabled={() => setEqEnabled((v) => !v)}
-            onChangeBand={(idx, db) => {
-              setBandsDb((prev) => prev.map((val, i) => (i === idx ? db : val)));
-              setActivePresetName('Custom');
-            }}
-            onChangePreamp={setPreampDb}
-            onChangeBassBoost={setBassBoostPct}
-            onChangeLoudness={setLoudnessDb}
-            onApplyPreset={(preset) => {
-              setBandsDb(preset.gainsDb);
-              setActivePresetName(preset.name);
-            }}
-            onSaveCustomPreset={(name) => {
-              setCustomPresets((prev) => [
-                ...prev.filter((p) => p.name !== name),
-                { name, gainsDb: [...bandsDb] },
-              ]);
-              setActivePresetName(name);
-            }}
-            onDeleteCustomPreset={(name) => {
-              setCustomPresets((prev) => prev.filter((p) => p.name !== name));
-            }}
-            onReset={() => {
-              setBandsDb(BUILT_IN_EQ_PRESETS[0].gainsDb);
-              setPreampDb(0);
-              setBassBoostPct(0);
-              setLoudnessDb(0);
-              setActivePresetName('Flat');
-            }}
-          />
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 text-xs font-semibold text-slate-900 transition-colors hover:bg-white/15 dark:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Settings</span>
+            </button>
+            <EqualizerView
+              enabled={eqEnabled}
+              bandsDb={bandsDb}
+              preampDb={preampDb}
+              bassBoostPct={bassBoostPct}
+              loudnessDb={loudnessDb}
+              activePresetName={activePresetName}
+              customPresets={customPresets}
+              spectrumBars={spectrumBars}
+              isPlaying={isPlaying}
+              accent={accent}
+              onToggleEnabled={() => setEqEnabled((v) => !v)}
+              onChangeBand={(idx, db) => {
+                setBandsDb((prev) => prev.map((val, i) => (i === idx ? db : val)));
+                setActivePresetName('Custom');
+              }}
+              onChangePreamp={setPreampDb}
+              onChangeBassBoost={setBassBoostPct}
+              onChangeLoudness={setLoudnessDb}
+              onApplyPreset={(preset) => {
+                setBandsDb(preset.gainsDb);
+                setActivePresetName(preset.name);
+              }}
+              onSaveCustomPreset={(name) => {
+                setCustomPresets((prev) => [
+                  ...prev.filter((p) => p.name !== name),
+                  { name, gainsDb: [...bandsDb] },
+                ]);
+                setActivePresetName(name);
+              }}
+              onDeleteCustomPreset={(name) => {
+                setCustomPresets((prev) => prev.filter((p) => p.name !== name));
+              }}
+              onReset={() => {
+                setBandsDb(BUILT_IN_EQ_PRESETS[0].gainsDb);
+                setPreampDb(0);
+                setBassBoostPct(0);
+                setLoudnessDb(0);
+                setActivePresetName('Flat');
+              }}
+            />
+          </div>
         )}
 
         {activeTab === 'settings' && (
@@ -894,114 +923,22 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Bottom Mini Player + Mobile Pill Navigation */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 mx-auto max-w-6xl space-y-2 px-3 pb-3 sm:px-6">
-        {/* Floating Liquid Glass Mini Player */}
-        <div className="pointer-events-auto">
-          <LiquidGlassCard highlighted accentHex={accent.hex} className="overflow-hidden">
-            {/* Luminous Progress Strip */}
-            <div className="h-1 w-full bg-slate-900/10 dark:bg-white/10">
-              <div
-                className="h-full transition-[width] duration-150"
-                style={{
-                  width: `${miniProgress}%`,
-                  background: `linear-gradient(90deg, ${accent.deep}, ${accent.glow}, ${accent.hex})`,
-                }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 sm:px-4">
-              <button
-                type="button"
-                onClick={() => setShowNowPlaying(true)}
-                className="flex min-w-0 flex-1 items-center gap-3 text-left"
-              >
-                <img
-                  src={currentTrack.artwork}
-                  alt={currentTrack.album}
-                  referrerPolicy="no-referrer"
-                  className="h-11 w-11 shrink-0 rounded-xl object-cover shadow"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                    {currentTrack.title}
-                  </p>
-                  <p className="truncate text-xs text-slate-600 dark:text-slate-300">
-                    {currentTrack.artist} ·{' '}
-                    <span className="font-mono tabular-nums">
-                      {formatTime(currentTime)} / {formatTime(safeDuration)}
-                    </span>
-                  </p>
-                </div>
-              </button>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <LiquidGlassIconButton label="Previous" sizeClass="h-10 w-10" onClick={handlePrev}>
-                  <SkipBack className="h-4 w-4" />
-                </LiquidGlassIconButton>
-
-                <button
-                  type="button"
-                  aria-label={isPlaying ? 'Pause' : 'Play'}
-                  onClick={handleTogglePlayPause}
-                  style={{
-                    background: `linear-gradient(135deg, ${accent.glow}, ${accent.hex})`,
-                    boxShadow: `0 6px 18px -4px ${accent.hex}AA`,
-                  }}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/50 text-[#08090C] transition-transform active:scale-90"
-                >
-                  {isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="ml-0.5 h-5 w-5 fill-current" />}
-                </button>
-
-                <LiquidGlassIconButton label="Next" sizeClass="h-10 w-10" onClick={handleNext}>
-                  <SkipForward className="h-4 w-4" />
-                </LiquidGlassIconButton>
-
-                <LiquidGlassIconButton
-                  label="Expand Now Playing"
-                  sizeClass="hidden h-10 w-10 sm:inline-flex"
-                  onClick={() => setShowNowPlaying(true)}
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </LiquidGlassIconButton>
-              </div>
-            </div>
-          </LiquidGlassCard>
-        </div>
-
-        {/* Mobile Floating Liquid Glass Bottom Pill Bar */}
-        <div className="pointer-events-auto md:hidden">
-          <LiquidGlassCard className="px-1.5 py-1.5">
-            <nav className="grid grid-cols-5 gap-1" aria-label="Mobile navigation">
-              {navTabs.map((tab) => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.id;
-                return (
-                  <button
-                    key={`mob-${tab.id}`}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    style={
-                      active
-                        ? {
-                            backgroundColor: `${accent.hex}24`,
-                            color: accent.hex,
-                          }
-                        : undefined
-                    }
-                    className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-2xl py-1 text-[10px] font-semibold transition-colors ${
-                      active ? '' : 'text-slate-600 dark:text-slate-300'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="whitespace-nowrap">{tab.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          </LiquidGlassCard>
-        </div>
-      </div>
+      {/* Floating Pill Mini-Player + 5-Tab Frosted Glass Bottom Navigation Bar */}
+      <GlassNavigationDock
+        activeTab={activeTab}
+        currentTrack={currentTrack}
+        isPlaying={isPlaying}
+        progressFraction={miniProgressFraction}
+        accent={accent}
+        theme={theme}
+        onSelectTab={(tab) => {
+          setActiveTab(tab);
+          if (tab !== 'playlists') setSelectedPlaylistId(null);
+        }}
+        onOpenNowPlaying={() => setShowNowPlaying(true)}
+        onTogglePlay={handleTogglePlayPause}
+        onNext={handleNext}
+      />
 
       {/* Full-Screen Now Playing Overlay */}
       {showNowPlaying && (

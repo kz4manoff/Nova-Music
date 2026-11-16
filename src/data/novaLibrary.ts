@@ -9,7 +9,7 @@ export type ArtworkStyle = 'ROUNDED_CARD' | 'ROTATING_VINYL' | 'IMMERSIVE_GLOW' 
 export type RepeatMode = 'OFF' | 'ALL' | 'ONE';
 export type LibraryTab = 'SONGS' | 'ALBUMS' | 'ARTISTS' | 'FOLDERS' | 'GENRES';
 export type SortField = 'NAME' | 'ARTIST' | 'ALBUM' | 'DURATION' | 'DATE_ADDED';
-export type AppTab = 'home' | 'library' | 'playlists' | 'equalizer' | 'settings';
+export type AppTab = 'home' | 'reciters' | 'playlists' | 'settings' | 'search' | 'library' | 'equalizer';
 
 export interface AccentOption {
   id: string;
