@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -42,6 +43,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -154,7 +156,8 @@ fun NovaUpdateDialog(
                     Image(
                         painter = painterResource(id = R.drawable.ic_nova_logo),
                         contentDescription = "NOVA MUSIC",
-                        modifier = Modifier.size(40.dp)
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
 

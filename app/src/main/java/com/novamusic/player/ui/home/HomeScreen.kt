@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -287,7 +288,8 @@ private fun HomeFloatingHeader(
                 Image(
                     painter = painterResource(id = R.drawable.ic_nova_logo),
                     contentDescription = "NOVA MUSIC",
-                    modifier = Modifier.size(26.dp)
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }

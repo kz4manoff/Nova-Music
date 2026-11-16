@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -213,7 +214,8 @@ fun AboutScreen(
                                 Image(
                                     painter = painterResource(id = R.drawable.ic_nova_logo),
                                     contentDescription = "NOVA MUSIC Logo",
-                                    modifier = Modifier.size(54.dp)
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
                         }

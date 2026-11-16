@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -295,7 +296,8 @@ private fun PermissionGateScreen(
                         Image(
                             painter = painterResource(id = R.drawable.ic_nova_logo),
                             contentDescription = "NOVA MUSIC",
-                            modifier = Modifier.size(56.dp)
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))

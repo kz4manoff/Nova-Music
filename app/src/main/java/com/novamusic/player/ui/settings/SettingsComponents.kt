@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -133,7 +134,8 @@ fun NovaGlassProfileCard(
                 Image(
                     painter = painterResource(id = R.drawable.ic_nova_logo),
                     contentDescription = "NOVA MUSIC",
-                    modifier = Modifier.size(30.dp)
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
             Spacer(modifier = Modifier.width(14.dp))
