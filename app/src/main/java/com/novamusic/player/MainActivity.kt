@@ -59,6 +59,7 @@ import com.novamusic.player.ui.components.NovaUpdateDialog
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.ui.theme.NovaMusicTheme
 import com.novamusic.player.ui.theme.rememberArtworkPalette
+import com.novamusic.player.update.UpdateWorkScheduler
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -66,10 +67,12 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_OPEN_PLAYER = "extra_open_player"
+        const val EXTRA_OPEN_UPDATES = "extra_open_updates"
     }
 
     private var hasAudioPermissionState by mutableStateOf(false)
     private var openNowPlayingTrigger by mutableIntStateOf(0)
+    private var openUpdatesTrigger by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,10 +82,18 @@ class MainActivity : AppCompatActivity() {
         hasAudioPermissionState = PermissionHelper.hasAudioPermission(this)
         if (intent?.getBooleanExtra(EXTRA_OPEN_PLAYER, false) == true) {
             openNowPlayingTrigger++
+            intent?.removeExtra(EXTRA_OPEN_PLAYER)
+        }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_UPDATES, false) == true) {
+            openUpdatesTrigger++
+            intent?.removeExtra(EXTRA_OPEN_UPDATES)
         }
 
         container.audioPlayerManager.connect()
         container.updateManager.startPeriodicChecks()
+        lifecycleScope.launch {
+            container.updateManager.clearStaleNotificationIfUpdated()
+        }
 
         if (hasAudioPermissionState) {
             initializeLibraryAndRestore(container)
@@ -96,6 +107,10 @@ class MainActivity : AppCompatActivity() {
                 .collectAsStateWithLifecycle()
             val updateState by container.updateManager.uiState
                 .collectAsStateWithLifecycle()
+
+            LaunchedEffect(settings.autoCheckUpdates) {
+                UpdateWorkScheduler.syncSchedule(applicationContext, settings.autoCheckUpdates)
+            }
 
             LaunchedEffect(settings.keepScreenOn) {
                 if (settings.keepScreenOn) {
@@ -142,7 +157,8 @@ class MainActivity : AppCompatActivity() {
                 if (hasAudioPermissionState) {
                     NovaMainAppShell(
                         container = container,
-                        openNowPlayingTrigger = openNowPlayingTrigger
+                        openNowPlayingTrigger = openNowPlayingTrigger,
+                        openUpdatesTrigger = openUpdatesTrigger
                     )
                 } else {
                     LaunchedEffect(Unit) {
@@ -198,6 +214,11 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_OPEN_PLAYER, false)) {
             openNowPlayingTrigger++
+            intent.removeExtra(EXTRA_OPEN_PLAYER)
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATES, false)) {
+            openUpdatesTrigger++
+            intent.removeExtra(EXTRA_OPEN_UPDATES)
         }
         val container = (application as NovaMusicApplication).container
         handleIncomingAudioIntent(intent, container)

@@ -30,6 +30,11 @@ interface UpdatePreferencesStore {
     suspend fun setDismissedUpdateVersionCode(versionCode: Int)
     suspend fun isAutoCheckUpdatesEnabled(): Boolean = true
     suspend fun isWifiOnlyDownloadEnabled(): Boolean = false
+    suspend fun getLastNotifiedUpdateVersionCode(): Int = 0
+    suspend fun setLastNotifiedUpdateVersionCode(versionCode: Int) {}
+    suspend fun getDismissedNotificationVersionCode(): Int = 0
+    suspend fun setDismissedNotificationVersionCode(versionCode: Int) {}
+    suspend fun clearStaleNotificationState(installedVersionCode: Int) {}
 }
 
 class RepositoryUpdatePreferencesStore(
@@ -54,6 +59,24 @@ class RepositoryUpdatePreferencesStore(
 
     override suspend fun isWifiOnlyDownloadEnabled(): Boolean =
         preferences.appSettings.first().wifiOnlyUpdateDownloads
+
+    override suspend fun getLastNotifiedUpdateVersionCode(): Int =
+        preferences.appSettings.first().lastNotifiedUpdateVersionCode
+
+    override suspend fun setLastNotifiedUpdateVersionCode(versionCode: Int) {
+        preferences.setLastNotifiedUpdateVersionCode(versionCode)
+    }
+
+    override suspend fun getDismissedNotificationVersionCode(): Int =
+        preferences.appSettings.first().dismissedUpdateNotificationVersionCode
+
+    override suspend fun setDismissedNotificationVersionCode(versionCode: Int) {
+        preferences.setDismissedUpdateNotificationVersionCode(versionCode)
+    }
+
+    override suspend fun clearStaleNotificationState(installedVersionCode: Int) {
+        preferences.clearStaleUpdateNotificationStateIfInstalled(installedVersionCode)
+    }
 }
 
 class UpdateManager(
@@ -66,7 +89,8 @@ class UpdateManager(
     private val installedVersionName: String = BuildConfig.VERSION_NAME,
     private val updateJsonUrl: String = UpdateConfig.updateJsonUrl,
     private val clock: UpdateClock = object : UpdateClock {},
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    private val notifier: UpdateNotifier = object : UpdateNotifier {}
 ) {
     constructor(
         context: Context,
@@ -76,7 +100,8 @@ class UpdateManager(
         updatesDir = File(context.applicationContext.filesDir, UpdateConfig.UPDATES_SUBDIR),
         networkClient = AndroidUpdateNetworkClient(context.applicationContext),
         apkVerifier = AndroidApkVerifier(context.applicationContext),
-        apkInstaller = AndroidApkInstaller(context.applicationContext)
+        apkInstaller = AndroidApkInstaller(context.applicationContext),
+        notifier = AndroidUpdateNotifier(context.applicationContext)
     )
 
     private val _uiState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
@@ -87,12 +112,13 @@ class UpdateManager(
     private var periodicJob: Job? = null
 
     /**
-     * Starts a 24-hour periodic scheduler while the process is active and performs an initial
-     * check if 24 hours have elapsed since the previous check.
+     * Starts a periodic scheduler while the process is active and performs an initial
+     * check if the configured interval has elapsed since the previous check.
      */
     fun startPeriodicChecks() {
         if (periodicJob?.isActive == true) return
         periodicJob = scope.launch {
+            clearStaleNotificationIfUpdated()
             checkIfIntervalElapsed()
             while (isActive) {
                 delay(UpdateConfig.CHECK_INTERVAL_MS)
@@ -101,22 +127,34 @@ class UpdateManager(
         }
     }
 
-    suspend fun checkIfIntervalElapsed() {
+    suspend fun clearStaleNotificationIfUpdated() {
+        val lastNotified = preferencesStore.getLastNotifiedUpdateVersionCode()
+        val dismissedNotif = preferencesStore.getDismissedNotificationVersionCode()
+        if ((lastNotified > 0 && installedVersionCode >= lastNotified) ||
+            (dismissedNotif > 0 && installedVersionCode >= dismissedNotif)
+        ) {
+            preferencesStore.clearStaleNotificationState(installedVersionCode)
+            notifier.cancelUpdateNotification()
+        }
+    }
+
+    suspend fun checkIfIntervalElapsed(): Boolean {
         val currentState = _uiState.value
         if (currentState is UpdateUiState.Downloading ||
             currentState is UpdateUiState.Verifying ||
             currentState is UpdateUiState.ReadyToInstall
         ) {
-            return
+            return true
         }
         if (!preferencesStore.isAutoCheckUpdatesEnabled()) {
-            return
+            return true
         }
         val lastCheckMs = preferencesStore.getLastUpdateCheckMs()
         val now = clock.nowMs()
         if (UpdateEvaluator.shouldAutoCheck(now, lastCheckMs)) {
-            checkForUpdatesInternal(manual = false)
+            return checkForUpdatesInternal(manual = false)
         }
+        return true
     }
 
     fun checkForUpdatesManual() {
@@ -130,11 +168,13 @@ class UpdateManager(
         }
     }
 
-    suspend fun checkForUpdatesNow(manual: Boolean) {
-        checkForUpdatesInternal(manual = manual)
+    suspend fun checkForUpdatesNow(manual: Boolean): Boolean {
+        return checkForUpdatesInternal(manual = manual)
     }
 
-    private suspend fun checkForUpdatesInternal(manual: Boolean) {
+    private suspend fun checkForUpdatesInternal(manual: Boolean): Boolean {
+        clearStaleNotificationIfUpdated()
+
         if (!networkClient.isNetworkAvailable()) {
             if (manual) {
                 _uiState.value = UpdateUiState.Error(
@@ -143,7 +183,7 @@ class UpdateManager(
                     dialogVisible = true
                 )
             }
-            return
+            return true
         }
 
         _uiState.value = UpdateUiState.Checking(manual = manual)
@@ -162,7 +202,7 @@ class UpdateManager(
             } else {
                 _uiState.value = UpdateUiState.Idle
             }
-            return
+            return true
         } catch (io: IOException) {
             if (manual) {
                 _uiState.value = UpdateUiState.Error(
@@ -173,7 +213,7 @@ class UpdateManager(
             } else {
                 _uiState.value = UpdateUiState.Idle
             }
-            return
+            return false
         } catch (t: Throwable) {
             if (manual) {
                 _uiState.value = UpdateUiState.Error(
@@ -184,7 +224,7 @@ class UpdateManager(
             } else {
                 _uiState.value = UpdateUiState.Idle
             }
-            return
+            return false
         }
 
         val parsedResult = UpdateEvaluator.parseUpdateConfigJson(rawJson)
@@ -198,7 +238,7 @@ class UpdateManager(
             } else {
                 _uiState.value = UpdateUiState.Idle
             }
-            return
+            return true
         }
 
         val now = clock.nowMs()
@@ -206,6 +246,8 @@ class UpdateManager(
 
         when (val evaluation = UpdateEvaluator.evaluateUpdate(installedVersionCode, config)) {
             is UpdateEvaluationResult.NoUpdate -> {
+                notifier.cancelUpdateNotification()
+                preferencesStore.clearStaleNotificationState(installedVersionCode)
                 _uiState.value = UpdateUiState.UpToDate(
                     installedVersionName = installedVersionName,
                     installedVersionCode = installedVersionCode,
@@ -231,6 +273,20 @@ class UpdateManager(
                 val wasDismissed = !evaluation.isMandatory &&
                     dismissedVersion == evaluation.config.versionCode
                 val showDialog = manual || evaluation.isMandatory || !wasDismissed
+
+                val lastNotified = preferencesStore.getLastNotifiedUpdateVersionCode()
+                val dismissedNotif = preferencesStore.getDismissedNotificationVersionCode()
+                if (!manual &&
+                    evaluation.config.versionCode > installedVersionCode &&
+                    evaluation.config.versionCode > lastNotified &&
+                    evaluation.config.versionCode != dismissedNotif
+                ) {
+                    val posted = notifier.showUpdateAvailableNotification(evaluation.config)
+                    if (posted) {
+                        preferencesStore.setLastNotifiedUpdateVersionCode(evaluation.config.versionCode)
+                    }
+                }
+
                 _uiState.value = UpdateUiState.Available(
                     config = evaluation.config,
                     isMandatory = evaluation.isMandatory,
@@ -238,6 +294,7 @@ class UpdateManager(
                 )
             }
         }
+        return true
     }
 
     fun startDownload() {
@@ -361,6 +418,7 @@ class UpdateManager(
 
         val launched = apkInstaller.launchSystemInstaller(apkFile)
         if (launched) {
+            notifier.cancelUpdateNotification()
             _uiState.value = UpdateUiState.ReadyToInstall(
                 config = config,
                 isMandatory = isMandatory,

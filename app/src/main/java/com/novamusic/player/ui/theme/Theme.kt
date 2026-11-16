@@ -89,6 +89,10 @@ fun NovaMusicTheme(
             onSurface = NovaTextPrimaryDark,
             surfaceVariant = NovaAmoledSurfaceElevated,
             onSurfaceVariant = NovaTextSecondaryDark,
+            surfaceContainer = NovaAmoledSurfaceElevated,
+            surfaceContainerLow = NovaAmoledSurfaceElevated,
+            surfaceContainerHigh = NovaAmoledSurfaceElevated,
+            surfaceContainerHighest = NovaAmoledSurfaceElevated,
             outline = NovaAmoledBorder,
             error = NovaError
         )
@@ -105,6 +109,10 @@ fun NovaMusicTheme(
             onSurface = NovaTextPrimaryDark,
             surfaceVariant = NovaDarkSurfaceElevated,
             onSurfaceVariant = NovaTextSecondaryDark,
+            surfaceContainer = NovaDarkSurfaceElevated,
+            surfaceContainerLow = NovaDarkSurfaceElevated,
+            surfaceContainerHigh = NovaDarkSurfaceElevated,
+            surfaceContainerHighest = NovaDarkSurfaceElevated,
             outline = NovaDarkBorder,
             error = NovaError
         )
@@ -121,6 +129,10 @@ fun NovaMusicTheme(
             onSurface = NovaTextPrimaryLight,
             surfaceVariant = NovaLightSurfaceElevated,
             onSurfaceVariant = NovaTextSecondaryLight,
+            surfaceContainer = NovaLightSurfaceElevated,
+            surfaceContainerLow = NovaLightSurfaceElevated,
+            surfaceContainerHigh = NovaLightSurfaceElevated,
+            surfaceContainerHighest = NovaLightSurfaceElevated,
             outline = NovaLightBorder,
             error = NovaError
         )

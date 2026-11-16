@@ -121,6 +121,7 @@ fun NovaUpdateDialog(
             highlighted = isMandatory,
             elevation = 24.dp,
             glassOpacity = 1.08f,
+            opaqueSurface = true,
             contentPadding = PaddingValues(24.dp)
         ) {
             Column(

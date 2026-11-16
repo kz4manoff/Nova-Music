@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -731,7 +732,13 @@ fun TrackInfoDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 InfoRow("Title", song.title)
                 InfoRow("Artist", song.artist)
                 InfoRow("Album", song.album)
@@ -821,7 +828,11 @@ fun AddToPlaylistDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    LazyColumn(modifier = Modifier.height(200.dp)) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp)
+                    ) {
                         items(playlists, key = { it.id }) { playlist ->
                             Row(
                                 modifier = Modifier

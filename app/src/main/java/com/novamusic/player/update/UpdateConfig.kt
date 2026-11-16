@@ -24,7 +24,8 @@ object UpdateConfig {
         "github-releases.githubusercontent.com"
     )
 
-    const val CHECK_INTERVAL_MS: Long = 24L * 60L * 60L * 1000L // 24 hours
+    const val CHECK_INTERVAL_HOURS: Long = 12L
+    const val CHECK_INTERVAL_MS: Long = CHECK_INTERVAL_HOURS * 60L * 60L * 1000L // 12 hours
     const val CONNECT_TIMEOUT_MS: Int = 15_000
     const val READ_TIMEOUT_MS: Int = 30_000
     const val MAX_REDIRECTS: Int = 5

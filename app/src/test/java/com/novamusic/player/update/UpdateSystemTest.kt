@@ -23,7 +23,9 @@ class UpdateSystemTest {
         var lastCheckMs: Long = 0L,
         var dismissedVersionCode: Int = 0,
         var autoCheckEnabled: Boolean = true,
-        var wifiOnlyEnabled: Boolean = false
+        var wifiOnlyEnabled: Boolean = false,
+        var lastNotifiedVersionCode: Int = 0,
+        var dismissedNotificationVersionCode: Int = 0
     ) : UpdatePreferencesStore {
         override suspend fun getLastUpdateCheckMs(): Long = lastCheckMs
         override suspend fun setLastUpdateCheckMs(timestampMs: Long) {
@@ -37,6 +39,28 @@ class UpdateSystemTest {
 
         override suspend fun isAutoCheckUpdatesEnabled(): Boolean = autoCheckEnabled
         override suspend fun isWifiOnlyDownloadEnabled(): Boolean = wifiOnlyEnabled
+
+        override suspend fun getLastNotifiedUpdateVersionCode(): Int = lastNotifiedVersionCode
+        override suspend fun setLastNotifiedUpdateVersionCode(versionCode: Int) {
+            lastNotifiedVersionCode = versionCode
+        }
+
+        override suspend fun getDismissedNotificationVersionCode(): Int = dismissedNotificationVersionCode
+        override suspend fun setDismissedNotificationVersionCode(versionCode: Int) {
+            dismissedNotificationVersionCode = versionCode
+        }
+
+        override suspend fun clearStaleNotificationState(installedVersionCode: Int) {
+            if (lastNotifiedVersionCode > 0 && installedVersionCode >= lastNotifiedVersionCode) {
+                lastNotifiedVersionCode = 0
+            }
+            if (dismissedNotificationVersionCode > 0 && installedVersionCode >= dismissedNotificationVersionCode) {
+                dismissedNotificationVersionCode = 0
+            }
+            if (dismissedVersionCode > 0 && installedVersionCode >= dismissedVersionCode) {
+                dismissedVersionCode = 0
+            }
+        }
     }
 
     private class FakeClock(var currentMs: Long = 1_700_000_000_000L) : UpdateClock {
@@ -105,12 +129,32 @@ class UpdateSystemTest {
         }
     }
 
+    private class FakeUpdateNotifier(
+        var permissionGranted: Boolean = true
+    ) : UpdateNotifier {
+        val postedConfigs = mutableListOf<RemoteUpdateConfig>()
+        var cancelCalls: Int = 0
+
+        override fun canPostNotifications(): Boolean = permissionGranted
+
+        override fun showUpdateAvailableNotification(config: RemoteUpdateConfig): Boolean {
+            if (!permissionGranted) return false
+            postedConfigs.add(config)
+            return true
+        }
+
+        override fun cancelUpdateNotification() {
+            cancelCalls++
+        }
+    }
+
     private fun createManager(
         prefs: FakePreferencesStore = FakePreferencesStore(),
         network: FakeNetworkClient = FakeNetworkClient(),
         verifier: FakeApkVerifier = FakeApkVerifier(),
         installer: FakeApkInstaller = FakeApkInstaller(),
         clock: FakeClock = FakeClock(),
+        notifier: UpdateNotifier = FakeUpdateNotifier(),
         installedVersionCode: Int = 2,
         installedVersionName: String = "1.0.1"
     ): UpdateManager {
@@ -124,7 +168,8 @@ class UpdateSystemTest {
             installedVersionName = installedVersionName,
             updateJsonUrl = "https://novamusic.example.com/update.json",
             clock = clock,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            notifier = notifier
         )
     }
 
@@ -404,13 +449,14 @@ class UpdateSystemTest {
         assertEquals(1, installer.launchedFiles.size)
     }
 
-    // 10. 24-hour check interval & existing app data preservation
+    // 10. 12-hour check interval & existing app data preservation
     @Test
-    fun `periodic check respects 24 hour interval and preserves existing preferences`() = runBlocking {
+    fun `periodic check respects 12 hour interval and preserves existing preferences`() = runBlocking {
         val now = 1_700_000_000_000L
+        assertEquals(12L * 60L * 60L * 1000L, UpdateConfig.CHECK_INTERVAL_MS)
         assertTrue(UpdateEvaluator.shouldAutoCheck(nowMs = now, lastCheckMs = 0L))
-        assertFalse(UpdateEvaluator.shouldAutoCheck(nowMs = now, lastCheckMs = now - 86_399_999L))
-        assertTrue(UpdateEvaluator.shouldAutoCheck(nowMs = now, lastCheckMs = now - 86_400_000L))
+        assertFalse(UpdateEvaluator.shouldAutoCheck(nowMs = now, lastCheckMs = now - (UpdateConfig.CHECK_INTERVAL_MS - 1L)))
+        assertTrue(UpdateEvaluator.shouldAutoCheck(nowMs = now, lastCheckMs = now - UpdateConfig.CHECK_INTERVAL_MS))
 
         val prefs = FakePreferencesStore(lastCheckMs = now - 1_000L, dismissedVersionCode = 99)
         val clock = FakeClock(currentMs = now)
@@ -419,12 +465,12 @@ class UpdateSystemTest {
         )
         val manager = createManager(prefs = prefs, network = network, clock = clock)
 
-        // Within 24h window -> skipped, nothing touched
+        // Within 12h window -> skipped, nothing touched
         manager.checkIfIntervalElapsed()
         assertEquals(UpdateUiState.Idle, manager.uiState.value)
         assertEquals(99, prefs.dismissedVersionCode)
 
-        // Advance clock by 24h -> runs check and updates timestamp while preserving dismissedVersionCode for unrelated build
+        // Advance clock by 12h -> runs check and updates timestamp while preserving dismissedVersionCode for unrelated build
         clock.currentMs = now + UpdateConfig.CHECK_INTERVAL_MS
         manager.checkIfIntervalElapsed()
         assertTrue(manager.uiState.value is UpdateUiState.Available)
@@ -606,6 +652,124 @@ class UpdateSystemTest {
         assertEquals(10, olderRemote.installedVersionCode)
         assertEquals("1.0.9", olderRemote.installedVersionName)
         assertFalse(olderRemote.showConfirmationDialog)
+    }
+
+    // 16. Upgrade path 1.0.9 (10) -> 1.1.0 (11) & UpToDate when 1.1.0 (11) is installed
+    @Test
+    fun `upgrade from 1_0_9 to 1_1_0 offers update and installed 1_1_0 reports up to date`() = runBlocking {
+        val manifest110 = validManifestJson(
+            version = "1.1.0",
+            versionCode = 11,
+            apkUrl = "https://github.com/kz4manoff/Nova-Music/releases/download/v1.1.0/NOVA-MUSIC-v1.1.0.apk"
+        )
+        val legacyManager = createManager(
+            network = FakeNetworkClient(manifestJsonResponse = Result.success(manifest110)),
+            installedVersionCode = 10,
+            installedVersionName = "1.0.9"
+        )
+        legacyManager.checkForUpdatesNow(manual = true)
+        val available = legacyManager.uiState.value as UpdateUiState.Available
+        assertEquals("1.1.0", available.config.latestVersion)
+        assertEquals(11, available.config.versionCode)
+
+        val currentManager = createManager(
+            network = FakeNetworkClient(manifestJsonResponse = Result.success(manifest110)),
+            installedVersionCode = 11,
+            installedVersionName = "1.1.0"
+        )
+        currentManager.checkForUpdatesNow(manual = true)
+        val upToDate = currentManager.uiState.value as UpdateUiState.UpToDate
+        assertEquals(11, upToDate.installedVersionCode)
+        assertEquals("1.1.0", upToDate.installedVersionName)
+    }
+
+    // 17. Automatic update notifications fire once per version, respect dismissal, notify again on newer build, and clear after upgrade
+    @Test
+    fun `update notification fires once per new versionCode clears on upgrade and re-notifies on newer version`() = runBlocking {
+        val prefs = FakePreferencesStore()
+        val notifier = FakeUpdateNotifier(permissionGranted = true)
+        val network = FakeNetworkClient(
+            manifestJsonResponse = Result.success(
+                validManifestJson(
+                    version = "1.1.0",
+                    versionCode = 11,
+                    apkUrl = "https://github.com/kz4manoff/Nova-Music/releases/download/v1.1.0/NOVA-MUSIC-v1.1.0.apk"
+                )
+            )
+        )
+        val clock = FakeClock(currentMs = 1_700_000_000_000L)
+        val manager109 = createManager(
+            prefs = prefs,
+            network = network,
+            clock = clock,
+            notifier = notifier,
+            installedVersionCode = 10,
+            installedVersionName = "1.0.9"
+        )
+
+        // First automatic detection notifies once
+        manager109.checkForUpdatesNow(manual = false)
+        assertEquals(1, notifier.postedConfigs.size)
+        assertEquals(11, notifier.postedConfigs.single().versionCode)
+        assertEquals(11, prefs.lastNotifiedVersionCode)
+
+        // Repeated check for the same versionCode must not send duplicate notification
+        manager109.checkForUpdatesNow(manual = false)
+        assertEquals(1, notifier.postedConfigs.size)
+
+        // A newer release (versionCode 12) triggers a fresh notification
+        network.manifestJsonResponse = Result.success(
+            validManifestJson(
+                version = "1.1.1",
+                versionCode = 12,
+                apkUrl = "https://github.com/kz4manoff/Nova-Music/releases/download/v1.1.1/NOVA-MUSIC-v1.1.1.apk"
+            )
+        )
+        manager109.checkForUpdatesNow(manual = false)
+        assertEquals(2, notifier.postedConfigs.size)
+        assertEquals(12, prefs.lastNotifiedVersionCode)
+
+        // After user installs v1.1.1 (versionCode 12), notification state is cleared cleanly
+        val upgradedManager = createManager(
+            prefs = prefs,
+            network = network,
+            clock = clock,
+            notifier = notifier,
+            installedVersionCode = 12,
+            installedVersionName = "1.1.1"
+        )
+        upgradedManager.clearStaleNotificationIfUpdated()
+        assertEquals(0, prefs.lastNotifiedVersionCode)
+        assertTrue(notifier.cancelCalls >= 1)
+    }
+
+    // 18. Denied notification permission keeps update detection active without crashing or false tracking
+    @Test
+    fun `denied notification permission preserves in-app update detection without crashing`() = runBlocking {
+        val prefs = FakePreferencesStore()
+        val notifier = FakeUpdateNotifier(permissionGranted = false)
+        val network = FakeNetworkClient(
+            manifestJsonResponse = Result.success(
+                validManifestJson(
+                    version = "1.1.0",
+                    versionCode = 11,
+                    apkUrl = "https://github.com/kz4manoff/Nova-Music/releases/download/v1.1.0/NOVA-MUSIC-v1.1.0.apk"
+                )
+            )
+        )
+        val manager = createManager(
+            prefs = prefs,
+            network = network,
+            notifier = notifier,
+            installedVersionCode = 10,
+            installedVersionName = "1.0.9"
+        )
+
+        manager.checkForUpdatesNow(manual = false)
+        assertTrue(notifier.postedConfigs.isEmpty())
+        assertEquals(0, prefs.lastNotifiedVersionCode)
+        val available = manager.uiState.value as UpdateUiState.Available
+        assertEquals("1.1.0", available.config.latestVersion)
     }
 
     private companion object {

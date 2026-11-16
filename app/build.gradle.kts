@@ -31,11 +31,11 @@ val hasReleaseSigning = !releaseStorePath.isNullOrBlank() &&
 
 val resolvedVersionCode = (findProperty("NOVA_VERSION_CODE") as String?)?.toIntOrNull()
     ?: System.getenv("NOVA_VERSION_CODE")?.toIntOrNull()
-    ?: 10
+    ?: 11
 
 val resolvedVersionName = (findProperty("NOVA_VERSION_NAME") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_VERSION_NAME")?.takeIf { it.isNotBlank() }
-    ?: "1.0.9"
+    ?: "1.1.0"
 
 val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }
@@ -165,6 +165,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.guava)
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)

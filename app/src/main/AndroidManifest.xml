@@ -74,6 +74,10 @@
             </intent-filter>
         </service>
 
+        <receiver
+            android:name=".update.UpdateNotificationDismissReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>

@@ -38,6 +38,7 @@ import com.novamusic.player.update.AndroidApkInstaller
 import com.novamusic.player.update.UpdateConfig
 import com.novamusic.player.update.UpdateManager
 import com.novamusic.player.update.UpdateUiState
+import com.novamusic.player.update.UpdateWorkScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -393,7 +394,10 @@ class SettingsViewModel(
 
     // 8. App Updates & Downloads
     fun setAutoCheckUpdates(enabled: Boolean) {
-        viewModelScope.launch { preferences.setAutoCheckUpdates(enabled) }
+        viewModelScope.launch {
+            preferences.setAutoCheckUpdates(enabled)
+            UpdateWorkScheduler.syncSchedule(context.applicationContext, enabled)
+        }
     }
 
     fun setWifiOnlyUpdateDownloads(enabled: Boolean) {

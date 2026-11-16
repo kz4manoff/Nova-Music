@@ -17,6 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,9 +33,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -46,6 +49,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.CreateNewFolder
@@ -84,8 +89,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.data.model.Album
 import com.novamusic.player.data.model.Artist
@@ -182,23 +189,63 @@ fun LibraryScreen(
                         iconSize = 19.dp,
                         onClick = { showSortMenu = true }
                     )
+                    val menuBorderColor = if (novaColors.isLight) Color(0x220F172A) else Color.White.copy(alpha = 0.18f)
                     DropdownMenu(
                         expanded = showSortMenu,
                         onDismissRequest = { showSortMenu = false },
-                        modifier = Modifier.background(novaColors.elevatedSurface)
+                        offset = DpOffset(0.dp, 6.dp),
+                        properties = PopupProperties(
+                            focusable = true,
+                            dismissOnBackPress = true,
+                            dismissOnClickOutside = true,
+                            clippingEnabled = true
+                        ),
+                        shape = RoundedCornerShape(18.dp),
+                        containerColor = novaColors.elevatedSurface,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 18.dp,
+                        border = BorderStroke(0.8.dp, menuBorderColor),
+                        modifier = Modifier
+                            .widthIn(min = 188.dp, max = 240.dp)
+                            .heightIn(max = 320.dp)
                     ) {
                         SortOrder.entries.forEach { order ->
                             val selected = state.sortOrder == order
                             DropdownMenuItem(
                                 text = {
-                                    val arrow = if (selected) {
-                                        if (state.sortDirection == SortDirection.ASCENDING) " ↑" else " ↓"
-                                    } else ""
                                     Text(
-                                        text = order.label + arrow,
+                                        text = order.label,
                                         color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
+                                },
+                                trailingIcon = if (selected) {
+                                    {
+                                        Icon(
+                                            imageVector = if (state.sortDirection == SortDirection.ASCENDING) {
+                                                Icons.Rounded.ArrowUpward
+                                            } else {
+                                                Icons.Rounded.ArrowDownward
+                                            },
+                                            contentDescription = if (state.sortDirection == SortDirection.ASCENDING) {
+                                                "Ascending"
+                                            } else {
+                                                "Descending"
+                                            },
+                                            tint = accent,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                } else null,
+                                modifier = if (selected) {
+                                    Modifier
+                                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(accent.copy(alpha = if (novaColors.isLight) 0.11f else 0.16f))
+                                } else {
+                                    Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                 },
                                 onClick = {
                                     val nextDir = if (selected) {

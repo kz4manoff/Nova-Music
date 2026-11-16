@@ -72,7 +72,9 @@ data class AppSettings(
     val autoCheckUpdates: Boolean = true,
     val wifiOnlyUpdateDownloads: Boolean = false,
     val lastUpdateCheckMs: Long = 0L,
-    val dismissedUpdateVersionCode: Int = 0
+    val dismissedUpdateVersionCode: Int = 0,
+    val lastNotifiedUpdateVersionCode: Int = 0,
+    val dismissedUpdateNotificationVersionCode: Int = 0
 )
 
 data class PlaybackPersistenceState(
@@ -152,6 +154,8 @@ class PreferencesRepository(private val context: Context) {
         val WIFI_ONLY_UPDATE_DOWNLOADS = booleanPreferencesKey("wifi_only_update_downloads")
         val LAST_UPDATE_CHECK_MS = longPreferencesKey("last_update_check_ms")
         val DISMISSED_UPDATE_VERSION_CODE = intPreferencesKey("dismissed_update_version_code")
+        val LAST_NOTIFIED_UPDATE_VERSION_CODE = intPreferencesKey("last_notified_update_version_code")
+        val DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE = intPreferencesKey("dismissed_update_notification_version_code")
     }
 
     val appSettings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -207,7 +211,9 @@ class PreferencesRepository(private val context: Context) {
             autoCheckUpdates = prefs[Keys.AUTO_CHECK_UPDATES] ?: true,
             wifiOnlyUpdateDownloads = prefs[Keys.WIFI_ONLY_UPDATE_DOWNLOADS] ?: false,
             lastUpdateCheckMs = prefs[Keys.LAST_UPDATE_CHECK_MS] ?: 0L,
-            dismissedUpdateVersionCode = prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] ?: 0
+            dismissedUpdateVersionCode = prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] ?: 0,
+            lastNotifiedUpdateVersionCode = prefs[Keys.LAST_NOTIFIED_UPDATE_VERSION_CODE] ?: 0,
+            dismissedUpdateNotificationVersionCode = prefs[Keys.DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE] ?: 0
         )
     }
 
@@ -427,5 +433,30 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun setDismissedUpdateVersionCode(versionCode: Int) {
         context.dataStore.edit { it[Keys.DISMISSED_UPDATE_VERSION_CODE] = versionCode }
+    }
+
+    suspend fun setLastNotifiedUpdateVersionCode(versionCode: Int) {
+        context.dataStore.edit { it[Keys.LAST_NOTIFIED_UPDATE_VERSION_CODE] = versionCode }
+    }
+
+    suspend fun setDismissedUpdateNotificationVersionCode(versionCode: Int) {
+        context.dataStore.edit { it[Keys.DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE] = versionCode }
+    }
+
+    suspend fun clearStaleUpdateNotificationStateIfInstalled(installedVersionCode: Int) {
+        context.dataStore.edit { prefs ->
+            val notifiedCode = prefs[Keys.LAST_NOTIFIED_UPDATE_VERSION_CODE] ?: 0
+            if (notifiedCode > 0 && installedVersionCode >= notifiedCode) {
+                prefs[Keys.LAST_NOTIFIED_UPDATE_VERSION_CODE] = 0
+            }
+            val dismissedNotifCode = prefs[Keys.DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE] ?: 0
+            if (dismissedNotifCode > 0 && installedVersionCode >= dismissedNotifCode) {
+                prefs[Keys.DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE] = 0
+            }
+            val dismissedDialogCode = prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] ?: 0
+            if (dismissedDialogCode > 0 && installedVersionCode >= dismissedDialogCode) {
+                prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] = 0
+            }
+        }
     }
 }

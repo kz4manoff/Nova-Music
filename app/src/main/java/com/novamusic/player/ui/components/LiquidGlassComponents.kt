@@ -173,7 +173,8 @@ fun rememberReducedMotion(): Boolean {
 data class LiquidGlassNavTab(
     val route: String,
     val label: String,
-    val icon: ImageVector
+    val icon: ImageVector,
+    val hasBadge: Boolean = false
 )
 
 /**
@@ -344,6 +345,7 @@ fun LiquidGlassSurface(
     highlighted: Boolean = false,
     elevation: Dp = 14.dp,
     glassOpacity: Float = 1f,
+    opaqueSurface: Boolean = false,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
@@ -370,19 +372,37 @@ fun LiquidGlassSurface(
 
     val topLayerAlpha = (if (isLight) 0.80f else 0.14f) * glassOpacity * api31Boost
     val midLayerAlpha = (if (isLight) 0.62f else 0.08f) * glassOpacity * api31Boost
-    val bottomLayerAlpha = (if (isLight) 0.72f else 0.11f) * glassOpacity * api31Boost
 
-    val baseBrush = Brush.verticalGradient(
-        colors = listOf(
-            if (highlighted) lerp(Color.White, accent, 0.24f).copy(alpha = (topLayerAlpha + 0.08f).coerceAtMost(0.96f))
-            else Color.White.copy(alpha = topLayerAlpha.coerceAtMost(0.95f)),
-            if (highlighted) accent.copy(alpha = (midLayerAlpha + 0.10f).coerceAtMost(0.88f))
-            else lerp(novaColors.glassSurface, palette.deepTint, if (isLight) 0.06f else 0.35f)
-                .copy(alpha = (if (isLight) 0.66f else 0.36f * glassOpacity).coerceAtMost(0.94f)),
-            lerp(novaColors.glassSurface, Color.Black, if (isLight) 0.03f else 0.40f)
-                .copy(alpha = (if (isLight) 0.74f else 0.44f * glassOpacity).coerceAtMost(0.95f))
+    val baseBrush = if (opaqueSurface) {
+        val solidBase = lerp(
+            novaColors.elevatedSurface,
+            palette.deepTint,
+            if (isLight) 0.04f else 0.16f
+        ).copy(alpha = 0.98f)
+        val topTint = if (highlighted) {
+            lerp(solidBase, accent, if (isLight) 0.10f else 0.14f)
+        } else {
+            lerp(solidBase, Color.White, if (isLight) 0.45f else 0.06f)
+        }
+        val bottomTint = if (isLight) {
+            lerp(solidBase, Color(0xFFE9EEF7), 0.35f)
+        } else {
+            lerp(solidBase, Color.Black, 0.22f)
+        }
+        Brush.verticalGradient(colors = listOf(topTint, solidBase, bottomTint))
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                if (highlighted) lerp(Color.White, accent, 0.24f).copy(alpha = (topLayerAlpha + 0.08f).coerceAtMost(0.96f))
+                else Color.White.copy(alpha = topLayerAlpha.coerceAtMost(0.95f)),
+                if (highlighted) accent.copy(alpha = (midLayerAlpha + 0.10f).coerceAtMost(0.88f))
+                else lerp(novaColors.glassSurface, palette.deepTint, if (isLight) 0.06f else 0.35f)
+                    .copy(alpha = (if (isLight) 0.66f else 0.36f * glassOpacity).coerceAtMost(0.94f)),
+                lerp(novaColors.glassSurface, Color.Black, if (isLight) 0.03f else 0.40f)
+                    .copy(alpha = (if (isLight) 0.74f else 0.44f * glassOpacity).coerceAtMost(0.95f))
+            )
         )
-    )
+    }
 
     val rimTop = if (highlighted) lerp(Color.White, accent, 0.35f).copy(alpha = 0.62f) else novaColors.glassBorderTop
     val rimBottom = if (highlighted) accent.copy(alpha = 0.26f) else novaColors.glassBorderBottom
@@ -836,8 +856,10 @@ fun LiquidGlassTabBar(
                 val tabWidth = maxWidth / count
                 val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
                 val innerPadPx = with(density) { 6.dp.toPx() }
-                val circleDiameter = minOf(tabWidth - 4.dp, 44.dp)
-                val circleDiameterPx = with(density) { circleDiameter.toPx() }
+                val capsuleWidth = minOf(tabWidth * 0.44f, 26.dp)
+                val capsuleWidthPx = with(density) { capsuleWidth.toPx() }
+                val capsuleHeight = 3.5.dp
+                val capsuleShape = RoundedCornerShape(50)
 
                 val isDragging = dragSlot != null
                 val travelDelta = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
@@ -847,67 +869,37 @@ fun LiquidGlassTabBar(
                     val velStretch = (abs(animatedVelocityX) / 1450f).coerceIn(0f, 1f)
                     (settleDist * 0.65f + velStretch * 0.85f).coerceIn(0f, 1.25f)
                 }
-                val lensScaleX = 1f + travelDelta * 0.22f
-                val lensScaleY = 1f - travelDelta * 0.08f
-                val lensCenterX = indicatorSlot * tabWidthPx + (tabWidthPx - circleDiameterPx) / 2f
+                val capsuleScaleX = 1f + travelDelta * 0.28f
+                val capsuleScaleY = 1f - travelDelta * 0.06f
+                val capsuleX = indicatorSlot * tabWidthPx + (tabWidthPx - capsuleWidthPx) / 2f
 
-                // Real-time finger-tracking circular Liquid Glass indicator
+                // Sliding accent-colored horizontal capsule indicator centered above the active icon
                 Box(
                     modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .size(circleDiameter)
+                        .align(Alignment.TopStart)
+                        .padding(top = 1.dp)
+                        .width(capsuleWidth)
+                        .height(capsuleHeight)
                         .graphicsLayer {
-                            translationX = lensCenterX
-                            scaleX = lensScaleX
-                            scaleY = lensScaleY
+                            translationX = capsuleX
+                            scaleX = capsuleScaleX
+                            scaleY = capsuleScaleY
                         }
                         .shadow(
-                            elevation = if (isDragging) 14.dp else 10.dp,
-                            shape = CircleShape,
-                            ambientColor = palette.glow.copy(alpha = if (isLight) 0.34f else 0.56f),
-                            spotColor = accent.copy(alpha = if (isLight) 0.36f else 0.62f)
+                            elevation = if (isDragging) 10.dp else 6.dp,
+                            shape = capsuleShape,
+                            ambientColor = accent.copy(alpha = if (isLight) 0.45f else 0.72f),
+                            spotColor = accent.copy(alpha = if (isLight) 0.50f else 0.78f)
                         )
-                        .clip(CircleShape)
+                        .clip(capsuleShape)
                         .background(
-                            Brush.radialGradient(
-                                colors = if (isLight) {
-                                    listOf(
-                                        Color.White.copy(alpha = 0.98f),
-                                        lerp(Color.White, palette.primary, 0.16f).copy(alpha = 0.88f)
-                                    )
-                                } else {
-                                    listOf(
-                                        lerp(Color.White, palette.glow, 0.34f).copy(alpha = 0.30f),
-                                        palette.primary.copy(alpha = 0.16f),
-                                        Color.White.copy(alpha = 0.08f)
-                                    )
-                                }
-                            )
-                        )
-                        .drawWithContent {
-                            drawContent()
-                            val sheenFrac = (indicatorSlot / (count - 1).coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
-                            drawCircle(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = if (isLight) 0.55f else 0.26f),
-                                        Color.White.copy(alpha = 0.05f),
-                                        Color.Transparent
-                                    ),
-                                    start = Offset(size.width * (0.15f + sheenFrac * 0.35f), 0f),
-                                    end = Offset(size.width * 0.9f, size.height)
-                                )
-                            )
-                        }
-                        .border(
-                            width = 0.9.dp,
-                            brush = Brush.verticalGradient(
+                            Brush.horizontalGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = if (isLight) 0.98f else 0.62f),
-                                    Color.White.copy(alpha = 0.12f)
+                                    lerp(accent, Color.White, 0.20f),
+                                    accent,
+                                    lerp(accent, palette.glow, 0.22f)
                                 )
-                            ),
-                            shape = CircleShape
+                            )
                         )
                 )
 
@@ -915,6 +907,7 @@ fun LiquidGlassTabBar(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(top = 4.dp)
                         .pointerInput(count, tabWidthPx) {
                             val touchSlop = viewConfiguration.touchSlop
                             awaitEachGesture {
@@ -1022,9 +1015,9 @@ fun LiquidGlassTabBar(
                     tabs.forEachIndexed { index, tab ->
                         val proximity = iconProximityWeight(indicatorSlot, index)
                         val iconScale = if (reducedMotion) {
-                            if (index == selectedIndex) 1.12f else 1f
+                            if (index == selectedIndex) 1.10f else 1f
                         } else {
-                            1f + proximity * 0.22f
+                            1f + proximity * 0.16f
                         }
                         val iconTint = lerp(
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
@@ -1038,12 +1031,12 @@ fun LiquidGlassTabBar(
                                 .fillMaxHeight()
                                 .drawBehind {
                                     if (proximity > 0.04f) {
-                                        val glowR = size.minDimension * 0.58f
+                                        val glowR = size.minDimension * 0.56f
                                         drawCircle(
                                             brush = Brush.radialGradient(
                                                 colors = listOf(
-                                                    accent.copy(alpha = (if (isLight) 0.16f else 0.30f) * proximity),
-                                                    palette.glow.copy(alpha = (if (isLight) 0.06f else 0.12f) * proximity),
+                                                    accent.copy(alpha = (if (isLight) 0.14f else 0.24f) * proximity),
+                                                    palette.glow.copy(alpha = (if (isLight) 0.05f else 0.10f) * proximity),
                                                     Color.Transparent
                                                 ),
                                                 center = Offset(size.width / 2f, size.height / 2f),
@@ -1056,17 +1049,27 @@ fun LiquidGlassTabBar(
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = tab.label,
-                                tint = iconTint,
-                                modifier = Modifier
-                                    .size(23.dp)
-                                    .graphicsLayer {
-                                        scaleX = iconScale
-                                        scaleY = iconScale
-                                    }
-                            )
+                            Box(contentAlignment = Alignment.TopEnd) {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = tab.label,
+                                    tint = iconTint,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .graphicsLayer {
+                                            scaleX = iconScale
+                                            scaleY = iconScale
+                                        }
+                                )
+                                if (tab.hasBadge) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(accent)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1661,16 +1664,18 @@ fun LiquidGlassSheet(
     val novaColors = LocalNovaColors.current
     val palette = LocalArtworkPalette.current
     val containerTint = if (novaColors.isLight) {
-        Color(0xECF4F7FC)
+        Color(0xF8F5F7FC)
     } else {
-        lerp(Color(0xEC11131B), palette.deepTint, 0.42f)
+        lerp(Color(0xF812141E), palette.deepTint, 0.28f)
     }
+    val scrimTint = Color.Black.copy(alpha = if (novaColors.isLight) 0.42f else 0.62f)
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         containerColor = containerTint,
+        scrimColor = scrimTint,
         dragHandle = {
             Box(
                 modifier = Modifier

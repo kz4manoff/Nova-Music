@@ -13,6 +13,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,9 +33,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
@@ -88,9 +91,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.PopupProperties
 import com.novamusic.player.BuildConfig
 import com.novamusic.player.R
 import com.novamusic.player.data.model.AccentColorOption
@@ -580,41 +586,43 @@ fun <T> NovaDropdownSettingRow(
     val performHaptic = rememberNovaHaptic()
     var expanded by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    performHaptic()
-                    expanded = true
-                }
-                .padding(vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            SettingIconTile(
-                icon = icon,
-                tint = accent,
-                highlighted = false,
-                recessedBg = novaColors.recessedSurface
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+    val menuBorderColor = if (novaColors.isLight) Color(0x220F172A) else Color.White.copy(alpha = 0.18f)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                performHaptic()
+                expanded = true
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingIconTile(
+            icon = icon,
+            tint = accent,
+            highlighted = false,
+            recessedBg = novaColors.recessedSurface
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Box {
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
@@ -637,43 +645,65 @@ fun <T> NovaDropdownSettingRow(
                     modifier = Modifier.size(16.dp)
                 )
             }
-        }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier
-                .background(novaColors.elevatedSurface)
-                .border(0.65.dp, novaColors.glassBorderTop.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
-        ) {
-            options.forEach { (value, label) ->
-                val isSelected = value == selectedValue
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            ),
-                            color = if (isSelected) accent else MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    trailingIcon = if (isSelected) {
-                        {
-                            Icon(
-                                imageVector = Icons.Rounded.Check,
-                                contentDescription = null,
-                                tint = accent,
-                                modifier = Modifier.size(17.dp)
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                offset = DpOffset(0.dp, 6.dp),
+                properties = PopupProperties(
+                    focusable = true,
+                    dismissOnBackPress = true,
+                    dismissOnClickOutside = true,
+                    clippingEnabled = true
+                ),
+                shape = RoundedCornerShape(18.dp),
+                containerColor = novaColors.elevatedSurface,
+                tonalElevation = 0.dp,
+                shadowElevation = 18.dp,
+                border = BorderStroke(0.8.dp, menuBorderColor),
+                modifier = Modifier
+                    .widthIn(min = 184.dp, max = 260.dp)
+                    .heightIn(max = 320.dp)
+            ) {
+                options.forEach { (value, label) ->
+                    val isSelected = value == selectedValue
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                ),
+                                color = if (isSelected) accent else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                        },
+                        trailingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = accent,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+                        } else null,
+                        modifier = if (isSelected) {
+                            Modifier
+                                .padding(horizontal = 6.dp, vertical = 1.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(accent.copy(alpha = if (novaColors.isLight) 0.11f else 0.16f))
+                        } else {
+                            Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                        },
+                        onClick = {
+                            performHaptic()
+                            expanded = false
+                            onSelect(value)
                         }
-                    } else null,
-                    onClick = {
-                        performHaptic()
-                        expanded = false
-                        onSelect(value)
-                    }
-                )
+                    )
+                }
             }
         }
     }
@@ -958,12 +988,23 @@ fun NovaGlassSelectionDialog(
 ) {
     val accent = MaterialTheme.colorScheme.primary
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
         LiquidGlassSurface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .widthIn(max = 420.dp),
             shape = RoundedCornerShape(24.dp),
             elevation = 24.dp,
             glassOpacity = 1.08f,
+            opaqueSurface = true,
             contentPadding = PaddingValues(20.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -981,7 +1022,13 @@ fun NovaGlassSelectionDialog(
                     )
                 }
                 Spacer(modifier = Modifier.height(14.dp))
-                content()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth(), content = content)
+                }
                 Spacer(modifier = Modifier.height(14.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),

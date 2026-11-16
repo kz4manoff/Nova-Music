@@ -44,6 +44,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1205,6 +1207,7 @@ private fun QueueBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(bottom = 26.dp)
         ) {
             Row(
@@ -1229,7 +1232,7 @@ private fun QueueBottomSheet(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(420.dp),
+                    .heightIn(max = 420.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {

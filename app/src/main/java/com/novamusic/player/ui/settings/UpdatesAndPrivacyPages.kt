@@ -1,5 +1,7 @@
 package com.novamusic.player.ui.settings
 
+import android.Manifest
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -25,13 +27,17 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Policy
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -46,10 +53,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.BuildConfig
 import com.novamusic.player.R
 import com.novamusic.player.permissions.PermissionHelper
+import com.novamusic.player.ui.components.LiquidGlassButton
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.update.UpdateConfig
@@ -58,6 +69,7 @@ import com.novamusic.player.utils.FormatUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun AppUpdatesSettingsPage(
@@ -70,12 +82,38 @@ fun AppUpdatesSettingsPage(
     val accent = MaterialTheme.colorScheme.primary
     val novaColors = LocalNovaColors.current
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var canInstallUnknownApps by remember { mutableStateOf(viewModel.canRequestPackageInstalls()) }
+    var hasNotificationPermission by remember {
+        mutableStateOf(PermissionHelper.hasNotificationPermission(context))
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                canInstallUnknownApps = viewModel.canRequestPackageInstalls()
+                hasNotificationPermission = PermissionHelper.hasNotificationPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val installPermLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { _ ->
         canInstallUnknownApps = viewModel.canRequestPackageInstalls()
+    }
+
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val enabledNow = PermissionHelper.hasNotificationPermission(context)
+        hasNotificationPermission = enabledNow
+        if (!granted || !enabledNow) {
+            viewModel.openAppNotificationSettings(context)
+        }
     }
 
     val lastCheckedLabel = remember(settings.lastUpdateCheckMs) {
@@ -83,8 +121,26 @@ fun AppUpdatesSettingsPage(
         else SimpleDateFormat("MMM d, yyyy • HH:mm", Locale.getDefault()).format(Date(settings.lastUpdateCheckMs))
     }
 
+    val activeRemoteConfig = when (val state = updateState) {
+        is UpdateUiState.Available -> state.config
+        is UpdateUiState.Downloading -> state.config
+        is UpdateUiState.Verifying -> state.config
+        is UpdateUiState.ReadyToInstall -> state.config
+        is UpdateUiState.Error -> state.config
+        else -> null
+    }
+
+    val latestVersionSummary = when (val state = updateState) {
+        is UpdateUiState.Available -> "v${state.config.latestVersion} (Build ${state.config.versionCode})"
+        is UpdateUiState.Downloading -> "v${state.config.latestVersion} (Downloading)"
+        is UpdateUiState.Verifying -> "v${state.config.latestVersion} (Verifying)"
+        is UpdateUiState.ReadyToInstall -> "v${state.config.latestVersion} (Ready to Install)"
+        is UpdateUiState.UpToDate -> "v${state.installedVersionName} (Up to Date)"
+        else -> "Not fetched yet"
+    }
+
     val statusTitle = when (val state = updateState) {
-        is UpdateUiState.Checking -> "Checking GitHub Releases..."
+        is UpdateUiState.Checking -> "Checking Release Manifest..."
         is UpdateUiState.Available -> "Version ${state.config.latestVersion} Available"
         is UpdateUiState.Downloading -> "Downloading v${state.config.latestVersion}..."
         is UpdateUiState.Verifying -> "Verifying APK Signature & SHA-256..."
@@ -95,7 +151,7 @@ fun AppUpdatesSettingsPage(
     }
 
     val statusSubtitle = when (val state = updateState) {
-        is UpdateUiState.Available -> "Build ${state.config.versionCode} • Tap to view details & update"
+        is UpdateUiState.Available -> "Build ${state.config.versionCode} • Ready to download & verify"
         is UpdateUiState.UpToDate -> "v${state.installedVersionName} (Build ${state.installedVersionCode}) is the latest release"
         is UpdateUiState.Error -> "${state.message} • Tap to retry"
         else -> "Last checked: $lastCheckedLabel"
@@ -118,7 +174,8 @@ fun AppUpdatesSettingsPage(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NovaSettingsCard {
                     Row(
@@ -149,16 +206,190 @@ fun AppUpdatesSettingsPage(
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                             )
                             Text(
-                                text = "Version ${BuildConfig.VERSION_NAME} • Build ${BuildConfig.VERSION_CODE}",
+                                text = "Installed v${BuildConfig.VERSION_NAME} • Build ${BuildConfig.VERSION_CODE}",
                                 style = NovaMonoTelemetry.copy(fontSize = 11.sp),
                                 color = accent
                             )
                             Text(
-                                text = "Last checked: $lastCheckedLabel",
+                                text = "Latest: $latestVersionSummary",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+
+                    when (val state = updateState) {
+                        is UpdateUiState.Available -> {
+                            NovaSettingsDivider()
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = if (state.isMandatory) {
+                                    "Required Update: Version ${state.config.latestVersion} is ready to download and install."
+                                } else {
+                                    "Version ${state.config.latestVersion} is available to download and install."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LiquidGlassButton(
+                                onClick = viewModel::startUpdateDownload,
+                                highlighted = true,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp)
+                            ) {
+                                Text(
+                                    text = "Download & Install v${state.config.latestVersion}",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        is UpdateUiState.Downloading -> {
+                            NovaSettingsDivider()
+                            Spacer(modifier = Modifier.height(10.dp))
+                            val pctLabel = state.progressFraction?.let { "${(it * 100f).roundToInt()}%" } ?: "..."
+                            val bytesLabel = buildString {
+                                append(FormatUtils.formatFileSize(state.bytesDownloaded))
+                                if (state.totalBytes > 0L) {
+                                    append(" / ")
+                                    append(FormatUtils.formatFileSize(state.totalBytes))
+                                }
+                                append(" • ")
+                                append(pctLabel)
+                            }
+                            Text(
+                                text = "Downloading v${state.config.latestVersion} ($bytesLabel)",
+                                style = NovaMonoTelemetry.copy(fontSize = 11.sp),
+                                color = accent
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (state.progressFraction != null) {
+                                LinearProgressIndicator(
+                                    progress = { state.progressFraction.coerceIn(0f, 1f) },
+                                    color = accent,
+                                    trackColor = novaColors.recessedSurface,
+                                    strokeCap = StrokeCap.Round,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(7.dp)
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    color = accent,
+                                    trackColor = novaColors.recessedSurface,
+                                    strokeCap = StrokeCap.Round,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(7.dp)
+                                )
+                            }
+                            if (!state.isMandatory) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LiquidGlassButton(
+                                    onClick = viewModel::cancelUpdateDownload,
+                                    highlighted = false,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(42.dp)
+                                ) {
+                                    Text(
+                                        text = "Cancel Download",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        is UpdateUiState.Verifying -> {
+                            NovaSettingsDivider()
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = accent
+                                )
+                                Text(
+                                    text = "Verifying SHA-256 checksum and signing key...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        is UpdateUiState.ReadyToInstall -> {
+                            NovaSettingsDivider()
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = if (state.requiresInstallPermission) {
+                                    "Package verified. Allow app installs from NOVA MUSIC to continue updating to v${state.config.latestVersion}."
+                                } else {
+                                    "Package verified. Tap below to confirm installation via Android."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LiquidGlassButton(
+                                onClick = {
+                                    if (state.requiresInstallPermission) {
+                                        installPermLauncher.launch(viewModel.buildInstallPermissionIntent())
+                                    } else {
+                                        viewModel.startUpdateDownload()
+                                    }
+                                },
+                                highlighted = true,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp)
+                            ) {
+                                Text(
+                                    text = if (state.requiresInstallPermission) "Allow App Installs" else "Install v${state.config.latestVersion}",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        is UpdateUiState.UpToDate -> {
+                            NovaSettingsDivider()
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = accent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "You're already running the latest version (v${state.installedVersionName}).",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+
+                        else -> Unit
                     }
                 }
             }
@@ -194,9 +425,27 @@ fun AppUpdatesSettingsPage(
                     NovaSwitchSettingRow(
                         icon = Icons.Rounded.AutoAwesome,
                         title = "Automatic Update Checks",
-                        subtitle = "Check once every 24 hours in the background for new releases",
+                        subtitle = "Check every 12 hours in the background when connected and battery is not low",
                         checked = settings.autoCheckUpdates,
                         onCheckedChange = viewModel::setAutoCheckUpdates
+                    )
+                    NovaSettingsDivider()
+                    NovaActionSettingRow(
+                        icon = Icons.Rounded.Notifications,
+                        title = "Update Notifications",
+                        subtitle = if (hasNotificationPermission) {
+                            "Enabled on the \"App Updates\" channel (once per new version)"
+                        } else {
+                            "Notifications disabled — using in-app update badge instead"
+                        },
+                        trailingText = if (hasNotificationPermission) "Enabled" else "Allow",
+                        onClick = {
+                            if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                viewModel.openAppNotificationSettings(context)
+                            }
+                        }
                     )
                     NovaSettingsDivider()
                     NovaActionSettingRow(
@@ -215,13 +464,6 @@ fun AppUpdatesSettingsPage(
         }
 
         item(key = "updates_changelog") {
-            val activeRemoteConfig = when (val state = updateState) {
-                is UpdateUiState.Available -> state.config
-                is UpdateUiState.Downloading -> state.config
-                is UpdateUiState.Verifying -> state.config
-                is UpdateUiState.ReadyToInstall -> state.config
-                else -> null
-            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -243,6 +485,10 @@ fun AppUpdatesSettingsPage(
                         }
                         NovaSettingsDivider()
                     }
+                    NovaInfoRow("Installed Version", "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})")
+                    NovaSettingsDivider()
+                    NovaInfoRow("Latest Release", latestVersionSummary)
+                    NovaSettingsDivider()
                     NovaInfoRow("Package ID", context.packageName)
                     NovaSettingsDivider()
                     NovaInfoRow(

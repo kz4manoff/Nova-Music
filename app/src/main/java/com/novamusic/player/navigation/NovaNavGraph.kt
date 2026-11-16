@@ -106,11 +106,13 @@ import com.novamusic.player.ui.settings.SettingsViewModel
 import com.novamusic.player.ui.settings.StorageSettingsPage
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.rememberArtworkPalette
+import com.novamusic.player.update.UpdateUiState
 
 @Composable
 fun NovaMainAppShell(
     container: AppContainer,
-    openNowPlayingTrigger: Int = 0
+    openNowPlayingTrigger: Int = 0,
+    openUpdatesTrigger: Int = 0
 ) {
     val navController = rememberNavController()
     val factory = remember(container) { NovaViewModelFactory(container) }
@@ -125,8 +127,8 @@ fun NovaMainAppShell(
     val playerState by playerViewModel.playerState.collectAsStateWithLifecycle()
     val audioRoutingState by playerViewModel.audioRoutingState.collectAsStateWithLifecycle()
     val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
-    val eqState by equalizerViewModel.eqState.collectAsStateWithLifecycle()
     val appSettings by settingsViewModel.appSettings.collectAsStateWithLifecycle()
+    val updateState by container.updateManager.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showNowPlaying by remember { mutableStateOf(openNowPlayingTrigger > 0) }
     var showAudioOutputSheet by remember { mutableStateOf(false) }
@@ -134,6 +136,33 @@ fun NovaMainAppShell(
     var nowPlayingCollapseProgress by remember { mutableFloatStateOf(0f) }
     var miniPlayerDismissed by rememberSaveable { mutableStateOf(false) }
     var lastObservedSongId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    val pendingUpdateVersion = when (val state = updateState) {
+        is UpdateUiState.Available -> state.config.latestVersion
+        is UpdateUiState.ReadyToInstall -> state.config.latestVersion
+        else -> null
+    }
+
+    val openUpdatesDestination: () -> Unit = {
+        showNowPlaying = false
+        lyricsTargetSong = null
+        showAudioOutputSheet = false
+        val routeNow = navController.currentBackStackEntry?.destination?.route
+        if (routeNow != NovaDestinations.SETTINGS_UPDATES) {
+            if (routeNow != NovaDestinations.SETTINGS) {
+                navController.navigate(NovaDestinations.SETTINGS) {
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+            navController.navigate(NovaDestinations.SETTINGS_UPDATES) {
+                launchSingleTop = true
+            }
+        }
+    }
 
     val artworkPalette = rememberArtworkPalette(
         artworkUri = playerState.currentSong?.artworkUri,
@@ -143,6 +172,12 @@ fun NovaMainAppShell(
     LaunchedEffect(openNowPlayingTrigger) {
         if (openNowPlayingTrigger > 0) {
             showNowPlaying = true
+        }
+    }
+
+    LaunchedEffect(openUpdatesTrigger) {
+        if (openUpdatesTrigger > 0) {
+            openUpdatesDestination()
         }
     }
 
@@ -177,13 +212,19 @@ fun NovaMainAppShell(
     val currentRoute = navBackStackEntry?.destination?.route ?: NovaDestinations.HOME
 
     // Required 5 Floating Liquid Glass Tabs: Home, Library, Search, Playlists, Settings
-    val bottomTabs = remember {
+    val hasPendingUpdate = pendingUpdateVersion != null
+    val bottomTabs = remember(hasPendingUpdate) {
         listOf(
             LiquidGlassNavTab(NovaDestinations.HOME, "Home", Icons.Rounded.Home),
             LiquidGlassNavTab(NovaDestinations.LIBRARY, "Library", Icons.Rounded.LibraryMusic),
             LiquidGlassNavTab(NovaDestinations.SEARCH, "Search", Icons.Rounded.Search),
             LiquidGlassNavTab(NovaDestinations.PLAYLISTS, "Playlists", Icons.Rounded.QueueMusic),
-            LiquidGlassNavTab(NovaDestinations.SETTINGS, "Settings", Icons.Rounded.Settings)
+            LiquidGlassNavTab(
+                NovaDestinations.SETTINGS,
+                "Settings",
+                Icons.Rounded.Settings,
+                hasBadge = hasPendingUpdate
+            )
         )
     }
 
@@ -369,15 +410,14 @@ fun NovaMainAppShell(
                     composable(NovaDestinations.HOME) {
                         HomeScreen(
                             viewModel = homeViewModel,
-                            isEqualizerActive = eqState.isEnabled,
                             onOpenSearch = { navigateTab(NovaDestinations.SEARCH) },
-                            onOpenEqualizer = { navController.navigate(NovaDestinations.EQUALIZER) },
-                            onOpenSettings = { navigateTab(NovaDestinations.SETTINGS) },
                             onOpenNowPlaying = { showNowPlaying = true },
                             onOpenAlbum = { albumId -> navController.navigate(NovaDestinations.albumDetail(albumId)) },
                             onOpenArtist = { artist -> navController.navigate(NovaDestinations.artistDetail(artist)) },
                             onOpenPlaylist = { pid -> navController.navigate(NovaDestinations.playlistDetail(pid)) },
                             onOpenLibrary = { navigateTab(NovaDestinations.LIBRARY) },
+                            availableUpdateVersion = pendingUpdateVersion,
+                            onOpenUpdates = openUpdatesDestination,
                             bottomContentPadding = miniPlayerHeight
                         )
                     }

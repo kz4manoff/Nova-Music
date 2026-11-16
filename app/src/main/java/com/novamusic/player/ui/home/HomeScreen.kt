@@ -31,18 +31,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -90,15 +87,14 @@ import com.novamusic.player.utils.FormatUtils
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    isEqualizerActive: Boolean = false,
     onOpenSearch: () -> Unit,
-    onOpenEqualizer: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenNowPlaying: () -> Unit,
     onOpenAlbum: (Long) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenPlaylist: (Long) -> Unit,
     onOpenLibrary: () -> Unit,
+    availableUpdateVersion: String? = null,
+    onOpenUpdates: (() -> Unit)? = null,
     bottomContentPadding: Dp
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -112,13 +108,7 @@ fun HomeScreen(
     ) {
         // Airy Floating iOS Header
         item {
-            HomeFloatingHeader(
-                isEqualizerActive = isEqualizerActive,
-                isScanning = state.isScanning,
-                onRefresh = viewModel::refreshLibrary,
-                onOpenEqualizer = onOpenEqualizer,
-                onOpenSettings = onOpenSettings
-            )
+            HomeFloatingHeader()
         }
 
         // Frosted Glass Search Pill Launcher
@@ -130,6 +120,60 @@ fun HomeScreen(
                 readOnlyOnClick = onOpenSearch,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
+        }
+
+        if (!availableUpdateVersion.isNullOrBlank() && onOpenUpdates != null) {
+            item(key = "home_in_app_update_indicator") {
+                val accent = MaterialTheme.colorScheme.primary
+                LiquidGlassSurface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    accentTint = accent.copy(alpha = 0.16f),
+                    highlighted = true,
+                    elevation = 10.dp,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    onClick = onOpenUpdates
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(accent.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.SystemUpdate,
+                                contentDescription = null,
+                                tint = accent,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "NOVA MUSIC v$availableUpdateVersion Ready",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Tap to view release notes & install update",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Atmospheric Hero Deck
@@ -258,13 +302,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeFloatingHeader(
-    isEqualizerActive: Boolean,
-    isScanning: Boolean,
-    onRefresh: () -> Unit,
-    onOpenEqualizer: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
+private fun HomeFloatingHeader() {
     val accent = MaterialTheme.colorScheme.primary
     val palette = LocalArtworkPalette.current
 
@@ -311,46 +349,6 @@ private fun HomeFloatingHeader(
                 color = accent
             )
         }
-
-        if (isScanning) {
-            Box(
-                modifier = Modifier.size(40.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = accent)
-            }
-        } else {
-            LiquidGlassIconButton(
-                icon = Icons.Rounded.Refresh,
-                contentDescription = "Rescan Library",
-                size = 40.dp,
-                iconSize = 20.dp,
-                onClick = onRefresh
-            )
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        LiquidGlassIconButton(
-            icon = Icons.Rounded.Equalizer,
-            contentDescription = "Equalizer",
-            active = isEqualizerActive,
-            showDotWhenActive = true,
-            tint = accent,
-            size = 40.dp,
-            iconSize = 20.dp,
-            onClick = onOpenEqualizer
-        )
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        LiquidGlassIconButton(
-            icon = Icons.Rounded.Settings,
-            contentDescription = "Settings",
-            size = 40.dp,
-            iconSize = 20.dp,
-            onClick = onOpenSettings
-        )
     }
 }
 
