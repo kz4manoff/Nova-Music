@@ -156,9 +156,6 @@ jobs:
 
           echo "Resolved NOVA MUSIC ${TAG_NAME} (versionName=${VERSION_NAME}, versionCode=${VERSION_CODE}, maxPublished=${MAX_PUBLISHED_CODE}, shouldRelease=${SHOULD_RELEASE})"
 
-      - name: Run Android Unit Tests
-        run: ./gradlew testDebugUnitTest --stacktrace
-
       - name: Validate release signing secrets
         id: signing
         shell: bash
@@ -194,15 +191,186 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Decode production keystore
+      - name: Decode & verify production keystore
         if: steps.signing.outputs.ready == 'true'
         shell: bash
         env:
           NOVA_KEYSTORE_BASE64: ${{ secrets.NOVA_KEYSTORE_BASE64 }}
+          NOVA_KEYSTORE_PASSWORD: ${{ secrets.NOVA_KEYSTORE_PASSWORD }}
+          NOVA_KEY_ALIAS: ${{ secrets.NOVA_KEY_ALIAS }}
+          NOVA_KEY_PASSWORD: ${{ secrets.NOVA_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          printf '%s' "$NOVA_KEYSTORE_BASE64" | base64 --decode > "${GITHUB_WORKSPACE}/nova-release.jks"
-          chmod 600 "${GITHUB_WORKSPACE}/nova-release.jks"
+          KEYSTORE_PATH="${GITHUB_WORKSPACE}/nova-release.jks"
+          export NOVA_KEYSTORE_PATH="${KEYSTORE_PATH}"
+
+          python3 - <<'PYEOF'
+          import base64
+          import binascii
+          import os
+          import re
+          import sys
+
+          def fail(msg: str) -> None:
+              print(f"::error::{msg}", file=sys.stderr)
+              sys.exit(1)
+
+          def normalize_b64(text: str) -> str:
+              s = text.strip()
+              if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+                  s = s[1:-1].strip()
+              if "-----BEGIN" in s and "-----END" in s:
+                  lines = [
+                      ln.strip()
+                      for ln in s.splitlines()
+                      if ln.strip() and not ln.strip().startswith("-----")
+                  ]
+                  s = "".join(lines)
+              if s.startswith("data:") and ";base64," in s[:128]:
+                  s = s.split(";base64,", 1)[1]
+              s = re.sub(r"\s+", "", s)
+              if not s:
+                  fail("NOVA_KEYSTORE_BASE64 secret is empty after trimming whitespace.")
+              if ("-" in s or "_" in s) and "+" not in s and "/" not in s:
+                  s = s.replace("-", "+").replace("_", "/")
+              if len(s) % 4 == 1:
+                  fail(
+                      f"NOVA_KEYSTORE_BASE64 has invalid Base64 length ({len(s)} chars; truncated paste)."
+                  )
+              if len(s) % 4 != 0:
+                  s += "=" * (4 - (len(s) % 4))
+              return s
+
+          def is_keystore_header(data: bytes) -> bool:
+              if len(data) < 128:
+                  return False
+              # JKS magic: 0xFEEDFEED, PKCS12 DER SEQUENCE: 0x30
+              return data[:4] == b"\xfe\xed\xfe\xed" or data[0:1] == b"\x30"
+
+          def diagnose_bytes(data: bytes) -> str:
+              n = len(data)
+              hdr = data[:4].hex() if n >= 4 else data.hex()
+              if n == 0:
+                  return "decoded to 0 bytes"
+              if data.lstrip().startswith(b"-----BEGIN"):
+                  return "decoded bytes are PEM text (not a binary .jks or .p12 keystore)"
+              if data[:2] in (b"\xff\xfe", b"\xfe\xff") or (n >= 16 and data[1:16:2] == b"\x00" * 7):
+                  return "decoded bytes look like UTF-16 text (likely created with PowerShell redirection instead of raw file bytes)"
+              if data[:2] == b"\x1f\x8b":
+                  return "decoded bytes start with gzip header (0x1f8b), not a raw .jks or .p12 keystore"
+              if data[:4] == b"PK\x03\x04":
+                  return "decoded bytes start with ZIP/APK header (0x504b0304), not a raw .jks or .p12 keystore"
+              sample = data[:min(n, 64)]
+              if all(b in b"\t\r\n" or 32 <= b <= 126 for b in sample):
+                  return f"decoded bytes are plain ASCII text ({n} bytes, magic=0x{hdr}), not a binary .jks or .p12 keystore"
+              if n < 128:
+                  return f"decoded to only {n} bytes (magic=0x{hdr}); truncated or wrong secret"
+              return f"unexpected binary header 0x{hdr} ({n} bytes); expected JKS (0xfeedfeed) or PKCS12 DER (0x30...)"
+
+          raw = os.environ.get("NOVA_KEYSTORE_BASE64", "")
+          try:
+              data = base64.b64decode(normalize_b64(raw), validate=True)
+          except binascii.Error as exc:
+              fail(
+                  f"NOVA_KEYSTORE_BASE64 is not valid Base64 ({exc}). Re-encode your .jks/.p12 keystore cleanly as single-line Base64 without edits or truncation."
+              )
+
+          if not is_keystore_header(data):
+              candidate = data
+              if candidate.startswith(b"\xef\xbb\xbf"):
+                  candidate = candidate[3:]
+              try:
+                  inner_text = candidate.decode("ascii")
+                  inner_data = base64.b64decode(normalize_b64(inner_text), validate=True)
+                  if is_keystore_header(inner_data):
+                      print("::warning::NOVA_KEYSTORE_BASE64 was double-base64 encoded; automatically unwrapped inner keystore bytes.")
+                      data = inner_data
+              except Exception:
+                  pass
+
+          if not is_keystore_header(data):
+              reason = diagnose_bytes(data)
+              fail(
+                  f"Decoded NOVA_KEYSTORE_BASE64 is not a valid Android keystore ({reason}). Re-encode your original .jks/.p12 file cleanly (for example: base64 -w 0 nova-release.jks) and update the NOVA_KEYSTORE_BASE64 repository secret."
+              )
+
+          out_path = os.environ["NOVA_KEYSTORE_PATH"]
+          with open(out_path, "wb") as f:
+              f.write(data)
+          os.chmod(out_path, 0o600)
+          fmt = "JKS" if data[:4] == b"\xfe\xed\xfe\xed" else "PKCS12/DER"
+          print(f"Decoded {len(data)} bytes ({fmt} header verified).")
+          PYEOF
+
+          VERIFY_DIR=$(mktemp -d)
+          trap 'rm -rf "${VERIFY_DIR}"' EXIT
+          cat <<'JAVA' > "${VERIFY_DIR}/VerifyKeystore.java"
+          import java.io.File;
+          import java.io.IOException;
+          import java.security.Key;
+          import java.security.KeyStore;
+          import java.security.UnrecoverableKeyException;
+          import java.security.cert.Certificate;
+
+          public class VerifyKeystore {
+              public static void main(String[] args) {
+                  String path = System.getenv("NOVA_KEYSTORE_PATH");
+                  String storePassEnv = System.getenv("NOVA_KEYSTORE_PASSWORD");
+                  String alias = System.getenv("NOVA_KEY_ALIAS");
+                  String keyPassEnv = System.getenv("NOVA_KEY_PASSWORD");
+                  char[] storePass = storePassEnv != null ? storePassEnv.toCharArray() : new char[0];
+                  char[] keyPass = keyPassEnv != null ? keyPassEnv.toCharArray() : new char[0];
+
+                  KeyStore ks;
+                  try {
+                      ks = KeyStore.getInstance(new File(path), storePass);
+                  } catch (IOException e) {
+                      String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                      String lower = msg.toLowerCase();
+                      Throwable cause = e.getCause();
+                      if (cause instanceof UnrecoverableKeyException || lower.contains("password") || lower.contains("tampered")) {
+                          System.err.println("::error::Failed to unlock keystore with NOVA_KEYSTORE_PASSWORD (" + msg + "). Check that NOVA_KEYSTORE_PASSWORD matches your keystore store password.");
+                      } else {
+                          System.err.println("::error::Keystore file from NOVA_KEYSTORE_BASE64 is corrupted or unreadable (" + msg + "). Re-encode your .jks/.p12 file cleanly and update NOVA_KEYSTORE_BASE64.");
+                      }
+                      System.exit(1);
+                      return;
+                  } catch (Exception e) {
+                      System.err.println("::error::Failed to load keystore (" + e.getClass().getSimpleName() + ": " + e.getMessage() + ").");
+                      System.exit(1);
+                      return;
+                  }
+
+                  try {
+                      if (!ks.containsAlias(alias)) {
+                          System.err.println("::error::Key alias configured in NOVA_KEY_ALIAS was not found in the keystore (total entries: " + ks.size() + "). Verify NOVA_KEY_ALIAS matches the exact key alias inside your keystore.");
+                          System.exit(1);
+                      }
+                      if (!ks.isKeyEntry(alias)) {
+                          System.err.println("::error::The entry matching NOVA_KEY_ALIAS is not a private key entry (it may be a public certificate only). Ensure your keystore contains the private key.");
+                          System.exit(1);
+                      }
+                      Key key = ks.getKey(alias, keyPass);
+                      Certificate cert = ks.getCertificate(alias);
+                      if (key == null || cert == null) {
+                          System.err.println("::error::Could not recover private key or certificate for NOVA_KEY_ALIAS.");
+                          System.exit(1);
+                      }
+                      System.out.println("Verified keystore (type=" + ks.getType() + ", entries=" + ks.size() + ", keyAlgorithm=" + key.getAlgorithm() + ").");
+                  } catch (UnrecoverableKeyException e) {
+                      System.err.println("::error::NOVA_KEY_PASSWORD could not decrypt the private key for NOVA_KEY_ALIAS. Verify NOVA_KEY_PASSWORD matches the key password.");
+                      System.exit(1);
+                  } catch (Exception e) {
+                      System.err.println("::error::Failed while verifying key entry (" + e.getClass().getSimpleName() + ": " + e.getMessage() + ").");
+                      System.exit(1);
+                  }
+              }
+          }
+          JAVA
+          java "${VERIFY_DIR}/VerifyKeystore.java"
+
+      - name: Run Android Unit Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Build signed Release APK
         if: steps.signing.outputs.ready == 'true'
@@ -249,19 +417,19 @@ jobs:
               echo "::error::APK package name is not com.novamusic.player."
               exit 1
             fi
-            if ! grep -q "versionCode='${OUT_VERSION_CODE}'" <<< "${BADGING}"; then
+            if ! grep -qE "(^|[[:space:]])versionCode='${OUT_VERSION_CODE}'([[:space:]]|$)" <<< "${BADGING}"; then
               echo "::error::APK versionCode does not match expected ${OUT_VERSION_CODE}."
               exit 1
             fi
-            if ! grep -q "versionName='${OUT_VERSION_NAME}'" <<< "${BADGING}"; then
+            if ! grep -qE "(^|[[:space:]])versionName='${OUT_VERSION_NAME}'([[:space:]]|$)" <<< "${BADGING}"; then
               echo "::error::APK versionName does not match expected ${OUT_VERSION_NAME}."
               exit 1
             fi
-            if ! grep -q "sdkVersion:'26'" <<< "${BADGING}"; then
+            if ! grep -qE "(^|[[:space:]])(minSdkVersion|sdkVersion):'26'([[:space:]]|$)" <<< "${BADGING}"; then
               echo "::error::APK minSdkVersion is not 26."
               exit 1
             fi
-            if ! grep -q "targetSdkVersion:'35'" <<< "${BADGING}"; then
+            if ! grep -qE "(^|[[:space:]])targetSdkVersion:'35'([[:space:]]|$)" <<< "${BADGING}"; then
               echo "::error::APK targetSdkVersion is not 35."
               exit 1
             fi
