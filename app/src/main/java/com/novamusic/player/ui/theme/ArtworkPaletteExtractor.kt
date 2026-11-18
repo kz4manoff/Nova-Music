@@ -34,10 +34,10 @@ data class ArtworkPalette(
 
 val LocalArtworkPalette = staticCompositionLocalOf {
     ArtworkPalette(
-        primary = NovaOrange,
-        secondary = Color(0xFF3E4C88),
-        glow = NovaOrangeGlow,
-        deepTint = Color(0xFF1A1216)
+        primary = NovaPink,
+        secondary = NovaPurple,
+        glow = NovaPinkGlow,
+        deepTint = NovaPurpleDeep
     )
 }
 
@@ -74,12 +74,20 @@ object ArtworkColorExtractor {
     }
 
     fun defaultPalette(fallbackAccent: Color): ArtworkPalette {
+        if (fallbackAccent == NovaPink) {
+            return ArtworkPalette(
+                primary = NovaPink,
+                secondary = NovaPurple,
+                glow = NovaPinkGlow,
+                deepTint = NovaPurpleDeep
+            )
+        }
         val hsv = FloatArray(3)
         android.graphics.Color.colorToHSV(fallbackAccent.toArgb(), hsv)
-        val secondaryHue = (hsv[0] + 145f) % 360f
+        val secondaryHue = (hsv[0] - 48f + 360f) % 360f
         val secondary = Color(
             android.graphics.Color.HSVToColor(
-                floatArrayOf(secondaryHue, (hsv[1] * 0.58f).coerceIn(0.25f, 0.72f), 0.48f)
+                floatArrayOf(secondaryHue, (hsv[1] * 0.68f).coerceIn(0.32f, 0.80f), 0.62f)
             )
         )
         val glow = Color(
@@ -89,7 +97,7 @@ object ArtworkColorExtractor {
         )
         val deepTint = Color(
             android.graphics.Color.HSVToColor(
-                floatArrayOf(hsv[0], (hsv[1] * 0.65f).coerceIn(0.22f, 0.7f), 0.16f)
+                floatArrayOf(secondaryHue, (hsv[1] * 0.68f).coerceIn(0.26f, 0.72f), 0.16f)
             )
         )
         return ArtworkPalette(

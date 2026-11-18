@@ -169,6 +169,7 @@ enum class NotificationAppearance(val label: String, val description: String) {
 }
 
 enum class AccentColorOption(val label: String, val hex: Long) {
+    NOVA_PINK("Nova Pink", 0xFFFF4DA6),
     ELECTRIC_ORANGE("Electric Orange", 0xFFFF8A32),
     CRIMSON_PULSE("Crimson Pulse", 0xFFFF4D6D),
     CYAN_NEON("Cyan Neon", 0xFF00D1FF),
@@ -186,28 +187,34 @@ enum class PlaybackMode(
     val label: String,
     val shortLabel: String
 ) {
-    SEQUENTIAL("Sequential", "Order"),
+    NORMAL("Normal", "Repeat Off"),
     SHUFFLE("Shuffle", "Shuffle"),
     REPEAT_ALL("Repeat All", "Repeat All"),
     REPEAT_ONE("Repeat One", "Repeat 1"),
     SMART_SHUFFLE("Smart Shuffle", "Smart");
 
     fun next(): PlaybackMode = when (this) {
-        SEQUENTIAL -> SHUFFLE
+        NORMAL -> SHUFFLE
         SHUFFLE -> REPEAT_ALL
         REPEAT_ALL -> REPEAT_ONE
         REPEAT_ONE -> SMART_SHUFFLE
-        SMART_SHUFFLE -> SEQUENTIAL
+        SMART_SHUFFLE -> NORMAL
     }
 
     val isActiveMode: Boolean
-        get() = this != SEQUENTIAL
+        get() = this != NORMAL
 
     companion object {
         fun fromLegacy(shuffleEnabled: Boolean, repeatMode: RepeatModeOption): PlaybackMode = when (repeatMode) {
             RepeatModeOption.ONE -> REPEAT_ONE
             RepeatModeOption.ALL -> REPEAT_ALL
-            RepeatModeOption.OFF -> if (shuffleEnabled) SHUFFLE else SEQUENTIAL
+            RepeatModeOption.OFF -> if (shuffleEnabled) SHUFFLE else NORMAL
+        }
+
+        fun fromStorageKey(raw: String?): PlaybackMode? = when (raw?.trim()?.uppercase()) {
+            null, "" -> null
+            "SEQUENTIAL", "NORMAL", "REPEAT_OFF" -> NORMAL
+            else -> runCatching { valueOf(raw.trim().uppercase()) }.getOrNull()
         }
     }
 }
@@ -256,7 +263,7 @@ data class PlayerUiState(
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
-    val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
+    val playbackMode: PlaybackMode = PlaybackMode.NORMAL,
     val sleepTimer: SleepTimerState = SleepTimerState(),
     val playbackError: String? = null
 ) {

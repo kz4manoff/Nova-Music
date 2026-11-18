@@ -72,7 +72,6 @@ import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Search
@@ -141,6 +140,11 @@ import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
+import com.novamusic.player.ui.theme.NovaPink
+import com.novamusic.player.ui.theme.NovaPinkGlow
+import com.novamusic.player.ui.theme.NovaPurple
+import com.novamusic.player.ui.theme.NovaPurpleDeep
+import com.novamusic.player.ui.theme.NovaPurpleGlow
 import com.novamusic.player.utils.FormatUtils
 import kotlinx.coroutines.delay
 import kotlin.math.abs
@@ -218,9 +222,9 @@ fun LiquidGlassBackdrop(
     val backgroundBase = if (isLight) {
         lerp(MaterialTheme.colorScheme.background, palette.primary, 0.08f)
     } else if (novaColors.isAmoled) {
-        lerp(Color.Black, palette.deepTint, 0.22f)
+        lerp(Color.Black, lerp(NovaPurpleDeep, palette.deepTint, 0.45f), 0.34f)
     } else {
-        lerp(MaterialTheme.colorScheme.background, palette.deepTint, 0.36f)
+        lerp(MaterialTheme.colorScheme.background, lerp(NovaPurpleDeep, palette.deepTint, 0.45f), 0.48f)
     }
 
     Box(
@@ -244,9 +248,9 @@ fun LiquidGlassBackdrop(
                         scaleX = pulseScale
                         scaleY = pulseScale
                         alpha = if (supportsHardwareBlur) {
-                            (if (isLight) 0.34f else if (novaColors.isAmoled) 0.36f else 0.48f) * intensity.coerceIn(0.65f, 1.35f)
+                            (if (isLight) 0.32f else if (novaColors.isAmoled) 0.30f else 0.40f) * intensity.coerceIn(0.65f, 1.35f)
                         } else {
-                            if (isLight) 0.16f else 0.18f
+                            if (isLight) 0.16f else 0.16f
                         }
                         if (supportsHardwareBlur) {
                             renderEffect = RenderEffect
@@ -257,65 +261,69 @@ fun LiquidGlassBackdrop(
             )
         }
 
-        // Dynamic multi-hue light scattering mesh from artwork palette
+        // Soft pink and purple ambient lighting blended gently with active artwork palette
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val playBoost = if (isPlaying) 1.22f else 0.92f
+            val playBoost = if (isPlaying) 1.18f else 0.94f
+
+            val pinkAmbient = lerp(NovaPink, palette.primary, 0.42f)
+            val purpleAmbient = lerp(NovaPurple, palette.secondary, 0.40f)
+            val glowAmbient = lerp(NovaPinkGlow, NovaPurpleGlow, 0.50f)
 
             val primaryOrb = Offset(
-                x = w * (0.20f + 0.22f * orbShift),
-                y = h * (0.16f + 0.08f * orbShift)
+                x = w * (0.18f + 0.20f * orbShift),
+                y = h * (0.14f + 0.08f * orbShift)
             )
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        palette.primary.copy(alpha = (if (isLight) 0.28f else 0.36f) * playBoost * intensity.coerceAtMost(1.2f)),
+                        pinkAmbient.copy(alpha = (if (isLight) 0.22f else 0.30f) * playBoost * intensity.coerceAtMost(1.2f)),
                         Color.Transparent
                     ),
                     center = primaryOrb,
-                    radius = w * 0.92f
+                    radius = w * 0.90f
                 ),
-                radius = w * 0.92f,
+                radius = w * 0.90f,
                 center = primaryOrb
             )
 
             val secondaryOrb = Offset(
-                x = w * (0.84f - 0.22f * orbShift),
-                y = h * (0.68f - 0.12f * orbShift)
+                x = w * (0.86f - 0.20f * orbShift),
+                y = h * (0.70f - 0.12f * orbShift)
             )
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        palette.secondary.copy(alpha = (if (isLight) 0.22f else 0.30f) * intensity.coerceAtMost(1.2f)),
+                        purpleAmbient.copy(alpha = (if (isLight) 0.20f else 0.32f) * intensity.coerceAtMost(1.2f)),
                         Color.Transparent
                     ),
                     center = secondaryOrb,
-                    radius = w * 0.88f
+                    radius = w * 0.92f
                 ),
-                radius = w * 0.88f,
+                radius = w * 0.92f,
                 center = secondaryOrb
             )
 
             val glowOrb = Offset(
                 x = w * (0.50f + 0.12f * (0.5f - orbShift)),
-                y = h * 0.38f
+                y = h * 0.40f
             )
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        palette.glow.copy(alpha = (if (isLight) 0.14f else 0.14f) * playBoost),
+                        glowAmbient.copy(alpha = (if (isLight) 0.12f else 0.12f) * playBoost),
                         Color.Transparent
                     ),
                     center = glowOrb,
-                    radius = w * 0.65f
+                    radius = w * 0.68f
                 ),
-                radius = w * 0.65f,
+                radius = w * 0.68f,
                 center = glowOrb
             )
         }
 
-        // Atmospheric readability gradient veil anchored in pure #000000 black
+        // Atmospheric readability gradient veil anchored in deep black & dark purple
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -329,15 +337,15 @@ fun LiquidGlassBackdrop(
                             )
                         } else if (novaColors.isAmoled) {
                             listOf(
-                                Color(0x8A000000),
-                                Color(0xBA000000),
+                                Color(0x7804010A),
+                                Color(0xB2020006),
                                 Color(0xF5000000)
                             )
                         } else {
                             listOf(
-                                Color(0x66040508),
-                                Color(0x94040508),
-                                Color(0xE6020204)
+                                Color(0x5C090314),
+                                Color(0x8F06020E),
+                                Color(0xE8020005)
                             )
                         }
                     )
@@ -828,9 +836,9 @@ private fun FloatingFrostedGlassContainer(
     } else {
         Brush.verticalGradient(
             colors = listOf(
-                Color(0xD91A1C24),
-                Color(0xE30E1016),
-                Color(0xEE08090D)
+                Color(0xDE1B112B),
+                Color(0xE610091C),
+                Color(0xF0080510)
             )
         )
     }
@@ -846,9 +854,9 @@ private fun FloatingFrostedGlassContainer(
     } else {
         Brush.linearGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.34f),
-                Color.White.copy(alpha = 0.12f),
-                Color.White.copy(alpha = 0.22f)
+                lerp(Color.White, NovaPinkGlow, 0.35f).copy(alpha = 0.42f),
+                Color.White.copy(alpha = 0.14f),
+                lerp(Color.White, NovaPurpleGlow, 0.42f).copy(alpha = 0.32f)
             )
         )
     }
@@ -869,14 +877,14 @@ private fun FloatingFrostedGlassContainer(
             .shadow(
                 elevation = elevation,
                 shape = shape,
-                ambientColor = if (isLight) Color(0x280F172A) else Color.Black.copy(alpha = 0.88f),
-                spotColor = if (isLight) Color(0x2E0F172A) else Color.Black.copy(alpha = 0.94f)
+                ambientColor = if (isLight) Color(0x280F172A) else NovaPurple.copy(alpha = 0.38f),
+                spotColor = if (isLight) Color(0x2E0F172A) else NovaPink.copy(alpha = 0.32f)
             )
             .clip(shape)
             .background(glassFill)
             .then(clickableModifier)
     ) {
-        // Subtle blurred internal ambient reflection layer for realistic frosted depth
+        // Subtle blurred internal pink & purple ambient reflection layer for realistic frosted depth
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -891,26 +899,26 @@ private fun FloatingFrostedGlassContainer(
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                if (isLight) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.08f),
+                                if (isLight) Color.White.copy(alpha = 0.45f) else NovaPink.copy(alpha = 0.14f),
                                 Color.Transparent
                             ),
-                            center = Offset(size.width * 0.22f, size.height * 0.10f),
-                            radius = size.width * 0.55f
+                            center = Offset(size.width * 0.18f, size.height * 0.12f),
+                            radius = size.width * 0.56f
                         ),
-                        radius = size.width * 0.55f,
-                        center = Offset(size.width * 0.22f, size.height * 0.10f)
+                        radius = size.width * 0.56f,
+                        center = Offset(size.width * 0.18f, size.height * 0.12f)
                     )
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                if (isLight) Color.White.copy(alpha = 0.30f) else Color(0xFF94A3B8).copy(alpha = 0.07f),
+                                if (isLight) Color.White.copy(alpha = 0.30f) else NovaPurple.copy(alpha = 0.18f),
                                 Color.Transparent
                             ),
-                            center = Offset(size.width * 0.82f, size.height * 0.85f),
-                            radius = size.width * 0.45f
+                            center = Offset(size.width * 0.84f, size.height * 0.84f),
+                            radius = size.width * 0.50f
                         ),
-                        radius = size.width * 0.45f,
-                        center = Offset(size.width * 0.82f, size.height * 0.85f)
+                        radius = size.width * 0.50f,
+                        center = Offset(size.width * 0.84f, size.height * 0.84f)
                     )
                 }
         )
@@ -951,8 +959,8 @@ private fun FloatingFrostedGlassContainer(
 
 /**
  * Floating iOS Liquid Glass Rounded Rectangular Bottom Navigation Bar featuring:
- * - Five evenly spaced minimalist white icons with no text labels
- * - Larger horizontal rounded-rectangle (pill-shaped) dark glass active indicator with thin white border
+ * - Four evenly spaced minimalist white icons with no text labels (Home, Library, Search, Playlists)
+ * - Larger horizontal rounded-rectangle dark frosted-glass active indicator with pink/purple ambient glow
  * - Smooth spring-driven sliding transition and continuous horizontal finger-tracking swipe/tap support
  */
 @Composable
@@ -977,9 +985,13 @@ fun LiquidGlassTabBar(
         val direct = tabs.indexOfFirst { currentRoute.startsWith(it.route) }
         when {
             direct >= 0 -> direct
-            currentRoute == "about" -> tabs.indexOfFirst { it.route == "settings" }.takeIf { it >= 0 }
             currentRoute.startsWith("playlist") || currentRoute == "favorites" ->
                 tabs.indexOfFirst { it.route == "playlists" }.takeIf { it >= 0 }
+            currentRoute.startsWith("album") ||
+                currentRoute.startsWith("artist") ||
+                currentRoute.startsWith("folder") ||
+                currentRoute.startsWith("genre") ->
+                tabs.indexOfFirst { it.route == "library" }.takeIf { it >= 0 }
             else -> null
         }
     }
@@ -1008,9 +1020,9 @@ fun LiquidGlassTabBar(
     )
 
     val barHeight = when (navBarAppearance) {
-        NavBarAppearance.FLOATING_GLASS -> 56.dp
-        NavBarAppearance.COMPACT -> 52.dp
-        NavBarAppearance.MINIMAL_PILL -> 50.dp
+        NavBarAppearance.FLOATING_GLASS -> 58.dp
+        NavBarAppearance.COMPACT -> 54.dp
+        NavBarAppearance.MINIMAL_PILL -> 52.dp
     }
     val barShape = RoundedCornerShape(26.dp)
     val horizontalInset = 16.dp
@@ -1039,10 +1051,10 @@ fun LiquidGlassTabBar(
                 val tabWidth = maxWidth / count
                 val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
                 val innerPadPx = with(density) { 6.dp.toPx() }
-                val indicatorHeight = minOf(38.dp, (maxHeight - 4.dp).coerceAtLeast(32.dp))
-                val indicatorWidth = (tabWidth - 2.dp).coerceAtLeast(48.dp)
+                val indicatorHeight = minOf(40.dp, (maxHeight - 2.dp).coerceAtLeast(34.dp))
+                val indicatorWidth = (tabWidth - 6.dp).coerceAtLeast(62.dp)
                 val indicatorWidthPx = with(density) { indicatorWidth.toPx() }
-                val indicatorShape = RoundedCornerShape(20.dp)
+                val indicatorShape = RoundedCornerShape(18.dp)
 
                 val isDragging = dragSlot != null
                 val travelDelta = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
@@ -1052,11 +1064,11 @@ fun LiquidGlassTabBar(
                     val velStretch = (abs(animatedVelocityX) / 1700f).coerceIn(0f, 0.75f)
                     (settleDist * 0.35f + velStretch * 0.45f).coerceIn(0f, 0.75f)
                 }
-                val highlightScaleX = 1f + travelDelta * 0.09f
+                val highlightScaleX = 1f + travelDelta * 0.08f
                 val highlightScaleY = 1f - travelDelta * 0.04f
                 val indicatorX = indicatorSlot * tabWidthPx + (tabWidthPx - indicatorWidthPx) / 2f
 
-                // Horizontal pill-shaped dark glass active indicator smoothly sliding behind icons
+                // Wide horizontal rounded-rectangle dark frosted glass active indicator smoothly sliding behind icons
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
@@ -1069,17 +1081,17 @@ fun LiquidGlassTabBar(
                         }
                         .clip(indicatorShape)
                         .background(
-                            Brush.verticalGradient(
+                            Brush.linearGradient(
                                 colors = if (isLight) {
                                     listOf(
                                         Color.White.copy(alpha = 0.96f),
-                                        Color.White.copy(alpha = 0.76f)
+                                        lerp(Color.White, NovaPinkGlow, 0.20f).copy(alpha = 0.84f)
                                     )
                                 } else {
                                     listOf(
-                                        Color(0xCC252834),
-                                        Color(0xD915171F),
-                                        Color(0xE60D0F14)
+                                        NovaPink.copy(alpha = 0.24f),
+                                        Color(0xD41B102E),
+                                        NovaPurple.copy(alpha = 0.28f)
                                     )
                                 }
                             )
@@ -1088,24 +1100,24 @@ fun LiquidGlassTabBar(
                             drawRect(
                                 brush = Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.White.copy(alpha = if (isLight) 0.40f else 0.10f),
+                                        Color.White.copy(alpha = if (isLight) 0.44f else 0.16f),
                                         Color.Transparent
                                     ),
                                     startY = 0f,
-                                    endY = size.height * 0.45f
+                                    endY = size.height * 0.48f
                                 )
                             )
                         }
                         .border(
-                            width = 0.85.dp,
+                            width = 0.9.dp,
                             brush = Brush.linearGradient(
                                 colors = if (isLight) {
-                                    listOf(Color.White, Color(0x280F172A))
+                                    listOf(Color.White, NovaPink.copy(alpha = 0.35f))
                                 } else {
                                     listOf(
-                                        Color.White.copy(alpha = 0.36f),
-                                        Color.White.copy(alpha = 0.12f),
-                                        Color.White.copy(alpha = 0.22f)
+                                        lerp(Color.White, NovaPinkGlow, 0.45f).copy(alpha = 0.56f),
+                                        Color.White.copy(alpha = 0.18f),
+                                        lerp(Color.White, NovaPurpleGlow, 0.55f).copy(alpha = 0.48f)
                                     )
                                 }
                             ),
@@ -1932,7 +1944,8 @@ fun LiquidGlassSheet(
 
 /**
  * Unified Optical Liquid Glass Playback Mode Button cycling:
- * Sequential -> Shuffle -> Repeat All -> Repeat One -> Smart Shuffle -> Sequential.
+ * Normal (Repeat Off) -> Shuffle -> Repeat All -> Repeat One -> Smart Shuffle -> Normal.
+ * Fixed outer bounds and centered icon container ensure zero layout shift or button movement across all states.
  */
 @Composable
 fun LiquidGlassPlaybackModeButton(
@@ -1950,50 +1963,41 @@ fun LiquidGlassPlaybackModeButton(
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1f,
-        animationSpec = if (reducedMotion) snap() else spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "lg_mode_scale"
-    )
+
     val activeFraction by animateFloatAsState(
         targetValue = if (isActive) 1f else 0f,
         animationSpec = if (reducedMotion) snap() else tween(220, easing = FastOutSlowInEasing),
         label = "lg_mode_active"
     )
+    val pressHighlightAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 0.14f else 0f,
+        animationSpec = if (reducedMotion) snap() else tween(120),
+        label = "lg_mode_press_alpha"
+    )
     val resolvedTint by animateColorAsState(
         targetValue = when {
-            playbackMode == PlaybackMode.SMART_SHUFFLE -> lerp(accent, Color.White, 0.18f)
-            isActive -> accent
-            else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f)
+            playbackMode == PlaybackMode.SMART_SHUFFLE -> lerp(accent, NovaPinkGlow, 0.38f)
+            isActive -> lerp(accent, NovaPinkGlow, 0.22f)
+            isLight -> Color(0xFF334155)
+            else -> Color.White.copy(alpha = 0.62f)
         },
         animationSpec = if (reducedMotion) snap() else tween(200),
         label = "lg_mode_tint"
     )
 
-    var showModeLabel by remember { mutableStateOf(false) }
-    var lastObservedMode by remember { mutableStateOf(playbackMode) }
-    LaunchedEffect(playbackMode) {
-        if (lastObservedMode != playbackMode) {
-            lastObservedMode = playbackMode
-            showModeLabel = true
-            delay(1450L)
-            showModeLabel = false
-        }
-    }
+    val activeTopColor = lerp(accent, NovaPink, 0.45f)
+    val activeBottomColor = lerp(accent, NovaPurple, 0.55f)
 
     val bgBrush = Brush.verticalGradient(
         colors = listOf(
             lerp(
-                Color.White.copy(alpha = if (isLight) 0.90f else 0.16f),
-                accent.copy(alpha = if (playbackMode == PlaybackMode.SMART_SHUFFLE) 0.42f else 0.34f),
+                Color.White.copy(alpha = if (isLight) 0.90f else 0.14f),
+                activeTopColor.copy(alpha = if (playbackMode == PlaybackMode.SMART_SHUFFLE) 0.38f else 0.30f),
                 activeFraction
             ),
             lerp(
-                novaColors.glassSurface.copy(alpha = if (isLight) 0.66f else 0.24f),
-                accent.copy(alpha = 0.16f),
+                novaColors.glassSurface.copy(alpha = if (isLight) 0.66f else 0.28f),
+                activeBottomColor.copy(alpha = 0.22f),
                 activeFraction
             )
         )
@@ -2001,63 +2005,98 @@ fun LiquidGlassPlaybackModeButton(
 
     val borderBrush = Brush.linearGradient(
         colors = listOf(
-            lerp(novaColors.glassBorderTop, accent.copy(alpha = 0.82f), activeFraction),
-            lerp(novaColors.glassBorderBottom, accent.copy(alpha = 0.24f), activeFraction)
+            lerp(novaColors.glassBorderTop, activeTopColor.copy(alpha = 0.88f), activeFraction),
+            lerp(novaColors.glassBorderBottom, activeBottomColor.copy(alpha = 0.42f), activeFraction)
         )
     )
 
+    val animatedShadowColor by animateColorAsState(
+        targetValue = if (isActive) activeTopColor.copy(alpha = 0.55f) else novaColors.glassShadow,
+        animationSpec = if (reducedMotion) snap() else tween(220),
+        label = "lg_mode_shadow"
+    )
+
+    // Strictly fixed-size circular glass button; only icon appearance transitions inside.
     Box(
-        modifier = modifier,
+        modifier = modifier
+            .size(size)
+            .shadow(
+                elevation = 10.dp,
+                shape = CircleShape,
+                ambientColor = animatedShadowColor,
+                spotColor = animatedShadowColor
+            )
+            .clip(CircleShape)
+            .background(bgBrush)
+            .drawWithContent {
+                drawContent()
+                if (pressHighlightAlpha > 0.005f) {
+                    drawRect(Color.White.copy(alpha = pressHighlightAlpha))
+                }
+            }
+            .border(0.85.dp, borderBrush, CircleShape)
+            .semantics {
+                stateDescription = playbackMode.label
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    performHaptic()
+                    onClick()
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(size)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
+        AnimatedContent(
+            targetState = playbackMode,
+            contentAlignment = Alignment.Center,
+            transitionSpec = {
+                if (reducedMotion) {
+                    fadeIn(tween(80)) togetherWith fadeOut(tween(80))
+                } else {
+                    (fadeIn(tween(180, easing = FastOutSlowInEasing)) + scaleIn(
+                        initialScale = 0.78f,
+                        animationSpec = tween(180, easing = FastOutSlowInEasing)
+                    )) togetherWith (fadeOut(tween(120)) + scaleOut(
+                        targetScale = 0.78f,
+                        animationSpec = tween(120)
+                    ))
                 }
-                .shadow(
-                    elevation = if (isActive) 12.dp else 6.dp,
-                    shape = CircleShape,
-                    ambientColor = if (isActive) accent.copy(alpha = 0.58f) else novaColors.glassShadow,
-                    spotColor = if (isActive) accent.copy(alpha = 0.58f) else novaColors.glassShadow
-                )
-                .clip(CircleShape)
-                .background(bgBrush)
-                .border(0.75.dp, borderBrush, CircleShape)
-                .semantics {
-                    stateDescription = playbackMode.label
-                }
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = {
-                        performHaptic()
-                        onClick()
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            AnimatedContent(
-                targetState = playbackMode,
-                transitionSpec = {
-                    if (reducedMotion) {
-                        fadeIn(tween(80)) togetherWith fadeOut(tween(80))
-                    } else {
-                        (fadeIn(tween(180)) + scaleIn(initialScale = 0.72f, animationSpec = tween(180))) togetherWith
-                            (fadeOut(tween(120)) + scaleOut(targetScale = 0.72f, animationSpec = tween(120)))
-                    }
-                },
-                label = "lg_playback_mode_icon"
-            ) { mode ->
+            },
+            label = "lg_playback_mode_icon",
+            modifier = Modifier.size(24.dp)
+        ) { mode ->
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 when (mode) {
-                    PlaybackMode.SEQUENTIAL -> Icon(
-                        imageVector = Icons.Rounded.PlaylistPlay,
-                        contentDescription = "Playback mode: Sequential",
-                        tint = resolvedTint,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    PlaybackMode.NORMAL -> {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .drawWithContent {
+                                    drawContent()
+                                    val strokePx = 1.6.dp.toPx()
+                                    drawLine(
+                                        color = resolvedTint,
+                                        start = Offset(size.width * 0.14f, size.height * 0.16f),
+                                        end = Offset(size.width * 0.86f, size.height * 0.84f),
+                                        strokeWidth = strokePx,
+                                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                    )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Repeat,
+                                contentDescription = "Playback mode: Normal (Repeat Off)",
+                                tint = resolvedTint,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
 
                     PlaybackMode.SHUFFLE -> Icon(
                         imageVector = Icons.Rounded.Shuffle,
@@ -2081,68 +2120,25 @@ fun LiquidGlassPlaybackModeButton(
                     )
 
                     PlaybackMode.SMART_SHUFFLE -> Box(
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Shuffle,
                             contentDescription = "Playback mode: Smart Shuffle",
                             tint = resolvedTint,
-                            modifier = Modifier
-                                .size(19.dp)
-                                .offset(x = (-1).dp, y = 1.dp)
+                            modifier = Modifier.size(19.dp)
                         )
                         Icon(
                             imageVector = Icons.Rounded.AutoAwesome,
                             contentDescription = null,
-                            tint = lerp(accent, Color.White, 0.42f),
+                            tint = lerp(NovaPurpleGlow, Color.White, 0.36f),
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .size(11.dp)
+                                .size(10.dp)
                         )
                     }
                 }
-            }
-
-            if (activeFraction > 0.05f) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 4.dp)
-                        .size(4.dp)
-                        .graphicsLayer {
-                            scaleX = activeFraction
-                            scaleY = activeFraction
-                            alpha = activeFraction
-                        }
-                        .clip(CircleShape)
-                        .background(accent)
-                )
-            }
-        }
-
-        // Transient floating Liquid Glass mode badge when cycling modes (non-displacing overlay)
-        AnimatedVisibility(
-            visible = showModeLabel,
-            enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.88f, animationSpec = tween(150)),
-            exit = fadeOut(tween(220)) + scaleOut(targetScale = 0.92f, animationSpec = tween(220)),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .offset(y = (-34).dp)
-                .wrapContentSize(align = Alignment.BottomStart, unbounded = true)
-        ) {
-            LiquidGlassSurface(
-                shape = RoundedCornerShape(12.dp),
-                highlighted = playbackMode.isActiveMode,
-                elevation = 8.dp,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = playbackMode.label,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = if (playbackMode.isActiveMode) accent else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
-                )
             }
         }
     }

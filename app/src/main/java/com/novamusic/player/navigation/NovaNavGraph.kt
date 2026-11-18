@@ -27,11 +27,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.RecordVoiceOver
+import androidx.compose.material.icons.rounded.LibraryBooks
+import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -151,11 +150,7 @@ fun NovaMainAppShell(
         if (routeNow != NovaDestinations.SETTINGS_UPDATES) {
             if (routeNow != NovaDestinations.SETTINGS) {
                 navController.navigate(NovaDestinations.SETTINGS) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        saveState = true
-                    }
                     launchSingleTop = true
-                    restoreState = true
                 }
             }
             navController.navigate(NovaDestinations.SETTINGS_UPDATES) {
@@ -211,36 +206,23 @@ fun NovaMainAppShell(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: NovaDestinations.HOME
 
-    // Required 5 Floating Liquid Glass Tabs: Home, Reciters, Playlists, Settings, Search
-    val hasPendingUpdate = pendingUpdateVersion != null
-    val bottomTabs = remember(hasPendingUpdate) {
+    // 4 Floating Liquid Glass Tabs in exact order: Home, Library, Search, Playlists
+    val bottomTabs = remember {
         listOf(
             LiquidGlassNavTab(NovaDestinations.HOME, "Home", Icons.Rounded.Home),
-            LiquidGlassNavTab(NovaDestinations.LIBRARY, "Reciters", Icons.Rounded.RecordVoiceOver),
-            LiquidGlassNavTab(NovaDestinations.PLAYLISTS, "Playlists", Icons.Rounded.GridView),
-            LiquidGlassNavTab(
-                NovaDestinations.SETTINGS,
-                "Settings",
-                Icons.Rounded.Settings,
-                hasBadge = hasPendingUpdate
-            ),
-            LiquidGlassNavTab(NovaDestinations.SEARCH, "Search", Icons.Rounded.Search)
+            LiquidGlassNavTab(NovaDestinations.LIBRARY, "Library", Icons.Rounded.LibraryBooks),
+            LiquidGlassNavTab(NovaDestinations.SEARCH, "Search", Icons.Rounded.Search),
+            LiquidGlassNavTab(NovaDestinations.PLAYLISTS, "Playlists", Icons.Rounded.QueueMusic)
         )
     }
 
     val navigateTab: (String) -> Unit = { route ->
-        if (route == NovaDestinations.SETTINGS &&
-            (currentRoute.startsWith("settings/") || currentRoute == NovaDestinations.ABOUT)
-        ) {
-            navController.popBackStack(NovaDestinations.SETTINGS, inclusive = false)
-        } else {
-            navController.navigate(route) {
-                popUpTo(navController.graph.findStartDestination().id) {
-                    saveState = true
-                }
-                launchSingleTop = true
-                restoreState = true
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
             }
+            launchSingleTop = true
+            restoreState = true
         }
     }
 
@@ -413,6 +395,11 @@ fun NovaMainAppShell(
                             onOpenArtist = { artist -> navController.navigate(NovaDestinations.artistDetail(artist)) },
                             onOpenPlaylist = { pid -> navController.navigate(NovaDestinations.playlistDetail(pid)) },
                             onOpenLibrary = { navigateTab(NovaDestinations.LIBRARY) },
+                            onOpenSettings = {
+                                navController.navigate(NovaDestinations.SETTINGS) {
+                                    launchSingleTop = true
+                                }
+                            },
                             availableUpdateVersion = pendingUpdateVersion,
                             onOpenUpdates = openUpdatesDestination,
                             bottomContentPadding = miniPlayerHeight
@@ -470,7 +457,7 @@ fun NovaMainAppShell(
                     composable(NovaDestinations.SETTINGS) {
                         SettingsScreen(
                             viewModel = settingsViewModel,
-                            onBack = null,
+                            onBack = { navController.popBackStack() },
                             bottomContentPadding = miniPlayerHeight,
                             onOpenAppearance = { navController.navigate(NovaDestinations.SETTINGS_APPEARANCE) },
                             onOpenPlayback = { navController.navigate(NovaDestinations.SETTINGS_PLAYBACK) },

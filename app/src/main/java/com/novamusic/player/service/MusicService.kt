@@ -63,7 +63,7 @@ class MusicService : MediaSessionService() {
     private var currentSettings: AppSettings = AppSettings()
 
     @Volatile
-    private var currentPlaybackMode: PlaybackMode = PlaybackMode.SEQUENTIAL
+    private var currentPlaybackMode: PlaybackMode = PlaybackMode.NORMAL
 
     private var hasUserChangedMode = false
     private var isApplyingModeTransition = false
@@ -260,9 +260,7 @@ class MusicService : MediaSessionService() {
                     PlaybackSessionContract.ACTION_SET_PLAYBACK_MODE -> {
                         hasUserChangedMode = true
                         val modeName = args.getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE)
-                        val targetMode = modeName?.let {
-                            runCatching { PlaybackMode.valueOf(it) }.getOrNull()
-                        } ?: currentPlaybackMode
+                        val targetMode = PlaybackMode.fromStorageKey(modeName) ?: currentPlaybackMode
                         val restoreOnly = args.getBoolean(PlaybackSessionContract.EXTRA_RESTORE_ONLY, false)
                         val overrideOriginals = args.getLongArray(PlaybackSessionContract.EXTRA_ORIGINAL_QUEUE_IDS)
                             ?.toList()
@@ -507,7 +505,7 @@ class MusicService : MediaSessionService() {
             return
         }
 
-        // Transitioning out of SMART_SHUFFLE (e.g., SMART_SHUFFLE -> SEQUENTIAL) or between standard modes.
+        // Transitioning out of SMART_SHUFFLE (e.g., SMART_SHUFFLE -> NORMAL) or between standard modes.
         if (previousMode == PlaybackMode.SMART_SHUFFLE && smartOriginalQueueIds.isNotEmpty() && exoPlayer.mediaItemCount > 1) {
             val itemCount = exoPlayer.mediaItemCount
             val itemsSnapshot = (0 until itemCount).map { exoPlayer.getMediaItemAt(it) }
@@ -589,7 +587,7 @@ class MusicService : MediaSessionService() {
         isApplyingModeTransition = true
         try {
             when (mode) {
-                PlaybackMode.SEQUENTIAL -> {
+                PlaybackMode.NORMAL -> {
                     exoPlayer.shuffleModeEnabled = false
                     exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
                 }
@@ -629,7 +627,7 @@ class MusicService : MediaSessionService() {
 
     private fun buildPlaybackModeCommandButton(mode: PlaybackMode): CommandButton {
         val (iconRes, label) = when (mode) {
-            PlaybackMode.SEQUENTIAL -> R.drawable.ic_mode_sequential to "Sequential"
+            PlaybackMode.NORMAL -> R.drawable.ic_mode_normal to "Normal"
             PlaybackMode.SHUFFLE -> R.drawable.ic_mode_shuffle to "Shuffle"
             PlaybackMode.REPEAT_ALL -> R.drawable.ic_mode_repeat_all to "Repeat All"
             PlaybackMode.REPEAT_ONE -> R.drawable.ic_mode_repeat_one to "Repeat One"
@@ -647,7 +645,7 @@ class MusicService : MediaSessionService() {
         return when (repeatMode) {
             Player.REPEAT_MODE_ONE -> PlaybackMode.REPEAT_ONE
             Player.REPEAT_MODE_ALL -> PlaybackMode.REPEAT_ALL
-            else -> if (shuffleEnabled) PlaybackMode.SHUFFLE else PlaybackMode.SEQUENTIAL
+            else -> if (shuffleEnabled) PlaybackMode.SHUFFLE else PlaybackMode.NORMAL
         }
     }
 

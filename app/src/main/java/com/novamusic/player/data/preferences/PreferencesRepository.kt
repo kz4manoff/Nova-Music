@@ -38,7 +38,7 @@ data class AppSettings(
     val hapticFeedback: Boolean = true,
     val keepScreenOn: Boolean = false,
     // Appearance
-    val accentColor: AccentColorOption = AccentColorOption.ELECTRIC_ORANGE,
+    val accentColor: AccentColorOption = AccentColorOption.NOVA_PINK,
     val artworkStyle: ArtworkStyle = ArtworkStyle.ROUNDED_CARD,
     val blurIntensity: Float = 1.0f,
     val playerAnimationStyle: PlayerAnimationStyle = PlayerAnimationStyle.FLUID,
@@ -84,7 +84,7 @@ data class PlaybackPersistenceState(
     val queueSongIds: List<Long> = emptyList(),
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatModeOption = RepeatModeOption.OFF,
-    val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
+    val playbackMode: PlaybackMode = PlaybackMode.NORMAL,
     val originalQueueSongIds: List<Long> = emptyList()
 )
 
@@ -172,7 +172,7 @@ class PreferencesRepository(private val context: Context) {
             hapticFeedback = prefs[Keys.HAPTIC_FEEDBACK] ?: true,
             keepScreenOn = prefs[Keys.KEEP_SCREEN_ON] ?: false,
             accentColor = prefs[Keys.ACCENT_COLOR]?.let { runCatching { AccentColorOption.valueOf(it) }.getOrNull() }
-                ?: AccentColorOption.ELECTRIC_ORANGE,
+                ?: AccentColorOption.NOVA_PINK,
             artworkStyle = prefs[Keys.ARTWORK_STYLE]?.let { runCatching { ArtworkStyle.valueOf(it) }.getOrNull() }
                 ?: ArtworkStyle.ROUNDED_CARD,
             blurIntensity = (prefs[Keys.BLUR_INTENSITY] ?: 1.0f).coerceIn(0.25f, 1.5f),
@@ -254,9 +254,8 @@ class PreferencesRepository(private val context: Context) {
         val repeat = prefs[Keys.REPEAT_MODE]?.let {
             runCatching { RepeatModeOption.valueOf(it) }.getOrNull()
         } ?: RepeatModeOption.OFF
-        val playbackMode = prefs[Keys.PLAYBACK_MODE]?.let {
-            runCatching { PlaybackMode.valueOf(it) }.getOrNull()
-        } ?: PlaybackMode.fromLegacy(shuffleEnabled = shuffleEnabled, repeatMode = repeat)
+        val playbackMode = PlaybackMode.fromStorageKey(prefs[Keys.PLAYBACK_MODE])
+            ?: PlaybackMode.fromLegacy(shuffleEnabled = shuffleEnabled, repeatMode = repeat)
 
         return PlaybackPersistenceState(
             lastSongId = prefs[Keys.LAST_SONG_ID] ?: -1L,

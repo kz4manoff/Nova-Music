@@ -35,7 +35,7 @@ class PlaybackModeAndSmartShuffleTest {
 
     @Test
     fun `playback mode cycles in exact 5-step sequence`() {
-        var mode = PlaybackMode.SEQUENTIAL
+        var mode = PlaybackMode.NORMAL
         val visited = mutableListOf(mode)
         repeat(5) {
             mode = mode.next()
@@ -43,12 +43,12 @@ class PlaybackModeAndSmartShuffleTest {
         }
         assertEquals(
             listOf(
-                PlaybackMode.SEQUENTIAL,
+                PlaybackMode.NORMAL,
                 PlaybackMode.SHUFFLE,
                 PlaybackMode.REPEAT_ALL,
                 PlaybackMode.REPEAT_ONE,
                 PlaybackMode.SMART_SHUFFLE,
-                PlaybackMode.SEQUENTIAL
+                PlaybackMode.NORMAL
             ),
             visited
         )
@@ -56,11 +56,13 @@ class PlaybackModeAndSmartShuffleTest {
 
     @Test
     fun `legacy shuffle and repeat preferences migrate cleanly to PlaybackMode`() {
-        assertEquals(PlaybackMode.SEQUENTIAL, PlaybackMode.fromLegacy(false, RepeatModeOption.OFF))
+        assertEquals(PlaybackMode.NORMAL, PlaybackMode.fromLegacy(false, RepeatModeOption.OFF))
         assertEquals(PlaybackMode.SHUFFLE, PlaybackMode.fromLegacy(true, RepeatModeOption.OFF))
         assertEquals(PlaybackMode.REPEAT_ALL, PlaybackMode.fromLegacy(false, RepeatModeOption.ALL))
         assertEquals(PlaybackMode.REPEAT_ONE, PlaybackMode.fromLegacy(false, RepeatModeOption.ONE))
         assertEquals(PlaybackMode.REPEAT_ONE, PlaybackMode.fromLegacy(true, RepeatModeOption.ONE))
+        assertEquals(PlaybackMode.NORMAL, PlaybackMode.fromStorageKey("SEQUENTIAL"))
+        assertEquals(PlaybackMode.NORMAL, PlaybackMode.fromStorageKey("NORMAL"))
     }
 
     @Test

@@ -925,7 +925,7 @@ fun NovaAccentColorPicker(
                 )
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(40.dp)
                         .graphicsLayer {
                             scaleX = ringScale
                             scaleY = ringScale
@@ -945,7 +945,7 @@ fun NovaAccentColorPicker(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(28.dp)
                             .shadow(
                                 elevation = if (isSelected) 8.dp else 2.dp,
                                 shape = CircleShape,
@@ -966,7 +966,7 @@ fun NovaAccentColorPicker(
                                 imageVector = Icons.Rounded.Check,
                                 contentDescription = option.label,
                                 tint = Color.Black,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }

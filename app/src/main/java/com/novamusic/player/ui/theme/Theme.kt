@@ -63,7 +63,7 @@ private val NovaShapes = Shapes(
 @Composable
 fun NovaMusicTheme(
     themeMode: ThemeMode = ThemeMode.AMOLED,
-    accentColor: AccentColorOption = AccentColorOption.ELECTRIC_ORANGE,
+    accentColor: AccentColorOption = AccentColorOption.NOVA_PINK,
     dynamicAccentColor: Color? = null,
     content: @Composable () -> Unit
 ) {
@@ -73,15 +73,20 @@ fun NovaMusicTheme(
         else -> themeMode
     }
     val accent = dynamicAccentColor ?: Color(accentColor.hex)
+    val secondaryAccent = if (dynamicAccentColor == null && accentColor == AccentColorOption.NOVA_PINK) {
+        NovaPurple
+    } else {
+        accent.copy(alpha = 0.85f)
+    }
     val isLight = effectiveMode == ThemeMode.LIGHT
 
     val colorScheme = when (effectiveMode) {
         ThemeMode.AMOLED -> darkColorScheme(
             primary = accent,
             onPrimary = Color(0xFF000000),
-            primaryContainer = accent.copy(alpha = 0.22f),
+            primaryContainer = accent.copy(alpha = 0.24f),
             onPrimaryContainer = accent,
-            secondary = accent.copy(alpha = 0.85f),
+            secondary = secondaryAccent,
             onSecondary = Color(0xFF000000),
             background = NovaAmoledBackground,
             onBackground = NovaTextPrimaryDark,
@@ -99,9 +104,9 @@ fun NovaMusicTheme(
         ThemeMode.DARK, ThemeMode.SYSTEM -> darkColorScheme(
             primary = accent,
             onPrimary = Color(0xFF000000),
-            primaryContainer = accent.copy(alpha = 0.22f),
+            primaryContainer = accent.copy(alpha = 0.24f),
             onPrimaryContainer = accent,
-            secondary = accent.copy(alpha = 0.85f),
+            secondary = secondaryAccent,
             onSecondary = Color(0xFF000000),
             background = NovaDarkBackground,
             onBackground = NovaTextPrimaryDark,
@@ -121,7 +126,7 @@ fun NovaMusicTheme(
             onPrimary = Color.White,
             primaryContainer = accent.copy(alpha = 0.16f),
             onPrimaryContainer = accent,
-            secondary = accent,
+            secondary = secondaryAccent,
             onSecondary = Color.White,
             background = NovaLightBackground,
             onBackground = NovaTextPrimaryLight,
@@ -146,11 +151,11 @@ fun NovaMusicTheme(
             borderSubtle = NovaAmoledBorder,
             glassSurface = NovaAmoledSurface,
             glassHighlight = NovaGlassHighlightDark,
-            glassBorderTop = Color(0x4DFFFFFF),
+            glassBorderTop = Color(0x5CE9D5FF),
             glassBorderBottom = NovaGlassBorderBottomDark,
-            glassShadow = Color(0xC8000000),
-            innerShadowTop = Color(0x28FFFFFF),
-            innerShadowBottom = Color(0x52000000),
+            glassShadow = Color(0xCC090212),
+            innerShadowTop = Color(0x30FCE7F3),
+            innerShadowBottom = Color(0x5707020E),
             isAmoled = true,
             isLight = false
         )
@@ -161,11 +166,11 @@ fun NovaMusicTheme(
             borderSubtle = NovaDarkBorder,
             glassSurface = NovaDarkSurface,
             glassHighlight = NovaGlassHighlightDark,
-            glassBorderTop = Color(0x52FFFFFF),
+            glassBorderTop = Color(0x60F3E8FF),
             glassBorderBottom = NovaGlassBorderBottomDark,
-            glassShadow = Color(0x9A000000),
-            innerShadowTop = Color(0x2CFFFFFF),
-            innerShadowBottom = Color(0x3D000000),
+            glassShadow = Color(0xA60B0318),
+            innerShadowTop = Color(0x33FCE7F3),
+            innerShadowBottom = Color(0x420A0414),
             isAmoled = false,
             isLight = false
         )

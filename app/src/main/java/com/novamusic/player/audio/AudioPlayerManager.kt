@@ -630,7 +630,7 @@ class AudioPlayerManager(
 
     private fun syncPlaybackModeFromExtras(extras: Bundle) {
         val raw = extras.getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE) ?: return
-        val parsed = runCatching { PlaybackMode.valueOf(raw) }.getOrNull() ?: return
+        val parsed = PlaybackMode.fromStorageKey(raw) ?: return
         if (_playerState.value.playbackMode != parsed) {
             _playerState.value = _playerState.value.copy(playbackMode = parsed)
         }
@@ -651,10 +651,9 @@ class AudioPlayerManager(
             ?: currentSong?.durationMs
             ?: 0L
 
-        val sessionMode = controller.sessionExtras
-            .getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE)
-            ?.let { runCatching { PlaybackMode.valueOf(it) }.getOrNull() }
-            ?: _playerState.value.playbackMode
+        val sessionMode = PlaybackMode.fromStorageKey(
+            controller.sessionExtras.getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE)
+        ) ?: _playerState.value.playbackMode
 
         _playerState.value = _playerState.value.copy(
             currentSong = currentSong,

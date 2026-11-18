@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.AlertDialog
@@ -79,9 +80,13 @@ import com.novamusic.player.ui.components.LiquidGlassIconButton
 import com.novamusic.player.ui.components.LiquidGlassSearchBar
 import com.novamusic.player.ui.components.LiquidGlassSurface
 import com.novamusic.player.ui.components.LocalReducedMotion
+import androidx.compose.ui.graphics.lerp
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
+import com.novamusic.player.ui.theme.NovaPink
+import com.novamusic.player.ui.theme.NovaPinkGlow
+import com.novamusic.player.ui.theme.NovaPurple
 import com.novamusic.player.utils.FormatUtils
 
 @Composable
@@ -93,6 +98,7 @@ fun HomeScreen(
     onOpenArtist: (String) -> Unit,
     onOpenPlaylist: (Long) -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenSettings: () -> Unit,
     availableUpdateVersion: String? = null,
     onOpenUpdates: (() -> Unit)? = null,
     bottomContentPadding: Dp
@@ -106,9 +112,12 @@ fun HomeScreen(
         contentPadding = PaddingValues(bottom = bottomContentPadding + 28.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Airy Floating iOS Header
+        // Airy Floating iOS Header with top-right pink/purple frosted glass Settings trigger
         item {
-            HomeFloatingHeader()
+            HomeFloatingHeader(
+                hasPendingUpdate = !availableUpdateVersion.isNullOrBlank(),
+                onOpenSettings = onOpenSettings
+            )
         }
 
         // Frosted Glass Search Pill Launcher
@@ -302,9 +311,13 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeFloatingHeader() {
+private fun HomeFloatingHeader(
+    hasPendingUpdate: Boolean,
+    onOpenSettings: () -> Unit
+) {
     val accent = MaterialTheme.colorScheme.primary
     val palette = LocalArtworkPalette.current
+    val novaColors = LocalNovaColors.current
 
     Row(
         modifier = Modifier
@@ -348,6 +361,56 @@ private fun HomeFloatingHeader() {
                 style = NovaMonoTelemetry.copy(fontSize = 9.5.sp),
                 color = accent
             )
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        LiquidGlassSurface(
+            modifier = Modifier.size(42.dp),
+            shape = RoundedCornerShape(15.dp),
+            highlighted = hasPendingUpdate,
+            accentTint = lerp(NovaPink, NovaPurple, 0.45f),
+            elevation = 12.dp,
+            onClick = onOpenSettings
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = if (novaColors.isLight) {
+                                listOf(
+                                    Color.White.copy(alpha = 0.72f),
+                                    NovaPinkGlow.copy(alpha = 0.16f)
+                                )
+                            } else {
+                                listOf(
+                                    NovaPink.copy(alpha = 0.22f),
+                                    NovaPurple.copy(alpha = 0.24f)
+                                )
+                            }
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = "Open Settings",
+                    tint = if (novaColors.isLight) MaterialTheme.colorScheme.onBackground else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                if (hasPendingUpdate) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(7.dp)
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(NovaPinkGlow)
+                            .border(1.dp, Color.Black.copy(alpha = 0.65f), CircleShape)
+                    )
+                }
+            }
         }
     }
 }
