@@ -2079,10 +2079,11 @@ fun LiquidGlassPlaybackModeButton(
                                 .drawWithContent {
                                     drawContent()
                                     val strokePx = 1.6.dp.toPx()
+                                    val canvasSize = this@drawWithContent.size
                                     drawLine(
                                         color = resolvedTint,
-                                        start = Offset(size.width * 0.14f, size.height * 0.16f),
-                                        end = Offset(size.width * 0.86f, size.height * 0.84f),
+                                        start = Offset(canvasSize.width * 0.14f, canvasSize.height * 0.16f),
+                                        end = Offset(canvasSize.width * 0.86f, canvasSize.height * 0.84f),
                                         strokeWidth = strokePx,
                                         cap = androidx.compose.ui.graphics.StrokeCap.Round
                                     )
