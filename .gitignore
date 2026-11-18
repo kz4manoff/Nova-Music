@@ -16,3 +16,5 @@ coverage/
 keystore.properties
 .env*
 !.env.example
+firebase-service-account*.json
+*firebase-adminsdk*.json

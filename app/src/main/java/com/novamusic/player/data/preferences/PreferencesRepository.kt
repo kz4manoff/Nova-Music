@@ -69,13 +69,17 @@ data class AppSettings(
     // Headphones & Routing
     val pauseOnHeadphonesDisconnect: Boolean = true,
     val resumeOnHeadphonesConnect: Boolean = false,
-    // Automatic App Updates
+    // Automatic App Updates & Push Notifications
     val autoCheckUpdates: Boolean = true,
     val wifiOnlyUpdateDownloads: Boolean = false,
     val lastUpdateCheckMs: Long = 0L,
     val dismissedUpdateVersionCode: Int = 0,
     val lastNotifiedUpdateVersionCode: Int = 0,
-    val dismissedUpdateNotificationVersionCode: Int = 0
+    val dismissedUpdateNotificationVersionCode: Int = 0,
+    val fcmToken: String = "",
+    val fcmSubscribedTopic: String = "",
+    val lastFcmMessageId: String = "",
+    val hasPromptedNotificationPermission: Boolean = false
 )
 
 data class PlaybackPersistenceState(
@@ -161,6 +165,10 @@ class PreferencesRepository(private val context: Context) {
         val DISMISSED_UPDATE_VERSION_CODE = intPreferencesKey("dismissed_update_version_code")
         val LAST_NOTIFIED_UPDATE_VERSION_CODE = intPreferencesKey("last_notified_update_version_code")
         val DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE = intPreferencesKey("dismissed_update_notification_version_code")
+        val FCM_TOKEN = stringPreferencesKey("fcm_token")
+        val FCM_SUBSCRIBED_TOPIC = stringPreferencesKey("fcm_subscribed_topic")
+        val LAST_FCM_MESSAGE_ID = stringPreferencesKey("last_fcm_message_id")
+        val HAS_PROMPTED_NOTIFICATION_PERMISSION = booleanPreferencesKey("has_prompted_notification_permission")
     }
 
     val appSettings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -217,7 +225,11 @@ class PreferencesRepository(private val context: Context) {
             lastUpdateCheckMs = prefs[Keys.LAST_UPDATE_CHECK_MS] ?: 0L,
             dismissedUpdateVersionCode = prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] ?: 0,
             lastNotifiedUpdateVersionCode = prefs[Keys.LAST_NOTIFIED_UPDATE_VERSION_CODE] ?: 0,
-            dismissedUpdateNotificationVersionCode = prefs[Keys.DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE] ?: 0
+            dismissedUpdateNotificationVersionCode = prefs[Keys.DISMISSED_UPDATE_NOTIFICATION_VERSION_CODE] ?: 0,
+            fcmToken = prefs[Keys.FCM_TOKEN] ?: "",
+            fcmSubscribedTopic = prefs[Keys.FCM_SUBSCRIBED_TOPIC] ?: "",
+            lastFcmMessageId = prefs[Keys.LAST_FCM_MESSAGE_ID] ?: "",
+            hasPromptedNotificationPermission = prefs[Keys.HAS_PROMPTED_NOTIFICATION_PERMISSION] ?: false
         )
     }
 
@@ -509,5 +521,29 @@ class PreferencesRepository(private val context: Context) {
                 prefs[Keys.DISMISSED_UPDATE_VERSION_CODE] = 0
             }
         }
+    }
+
+    suspend fun saveFcmToken(token: String) {
+        context.dataStore.edit { it[Keys.FCM_TOKEN] = token }
+    }
+
+    suspend fun saveFcmSubscribedTopic(topic: String) {
+        context.dataStore.edit { it[Keys.FCM_SUBSCRIBED_TOPIC] = topic }
+    }
+
+    suspend fun recordUpdateNotificationPosted(versionCode: Int, messageId: String?) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.LAST_NOTIFIED_UPDATE_VERSION_CODE] ?: 0
+            if (versionCode > current) {
+                prefs[Keys.LAST_NOTIFIED_UPDATE_VERSION_CODE] = versionCode
+            }
+            if (!messageId.isNullOrBlank()) {
+                prefs[Keys.LAST_FCM_MESSAGE_ID] = messageId.trim()
+            }
+        }
+    }
+
+    suspend fun setHasPromptedNotificationPermission(prompted: Boolean) {
+        context.dataStore.edit { it[Keys.HAS_PROMPTED_NOTIFICATION_PERMISSION] = prompted }
     }
 }

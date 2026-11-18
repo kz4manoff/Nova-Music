@@ -58,6 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.novamusic.player.BuildConfig
+import com.novamusic.player.NovaMusicApplication
 import com.novamusic.player.R
 import com.novamusic.player.permissions.PermissionHelper
 import com.novamusic.player.ui.components.LiquidGlassButton
@@ -111,7 +112,12 @@ fun AppUpdatesSettingsPage(
     ) { granted ->
         val enabledNow = PermissionHelper.hasNotificationPermission(context)
         hasNotificationPermission = enabledNow
-        if (!granted || !enabledNow) {
+        if (granted || enabledNow) {
+            (context.applicationContext as? NovaMusicApplication)
+                ?.container
+                ?.fcmUpdatePushManager
+                ?.ensureRegisteredAsync()
+        } else {
             viewModel.openAppNotificationSettings(context)
         }
     }
@@ -434,9 +440,9 @@ fun AppUpdatesSettingsPage(
                         icon = Icons.Rounded.Notifications,
                         title = "Update Notifications",
                         subtitle = if (hasNotificationPermission) {
-                            "Enabled on the \"App Updates\" channel (once per new version)"
+                            "Enabled on the \"NOVA Updates\" push channel (once per new version)"
                         } else {
-                            "Notifications disabled — using in-app update badge instead"
+                            "Notifications disabled — allow notifications to receive instant update alerts"
                         },
                         trailingText = if (hasNotificationPermission) "Enabled" else "Allow",
                         onClick = {

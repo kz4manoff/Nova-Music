@@ -1,7 +1,9 @@
 package com.novamusic.player
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
@@ -59,6 +61,7 @@ import com.novamusic.player.ui.components.NovaUpdateDialog
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
 import com.novamusic.player.ui.theme.NovaMusicTheme
 import com.novamusic.player.ui.theme.rememberArtworkPalette
+import com.novamusic.player.update.PushUpdatePayload
 import com.novamusic.player.update.UpdateWorkScheduler
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -80,17 +83,11 @@ class MainActivity : AppCompatActivity() {
 
         val container = (application as NovaMusicApplication).container
         hasAudioPermissionState = PermissionHelper.hasAudioPermission(this)
-        if (intent?.getBooleanExtra(EXTRA_OPEN_PLAYER, false) == true) {
-            openNowPlayingTrigger++
-            intent?.removeExtra(EXTRA_OPEN_PLAYER)
-        }
-        if (intent?.getBooleanExtra(EXTRA_OPEN_UPDATES, false) == true) {
-            openUpdatesTrigger++
-            intent?.removeExtra(EXTRA_OPEN_UPDATES)
-        }
+        handleIncomingUpdateAndPlayerIntent(intent, container)
 
         container.audioPlayerManager.connect()
         container.updateManager.startPeriodicChecks()
+        container.fcmUpdatePushManager.ensureRegisteredAsync()
         lifecycleScope.launch {
             container.updateManager.clearStaleNotificationIfUpdated()
         }
@@ -145,7 +142,29 @@ class MainActivity : AppCompatActivity() {
                     if (granted) {
                         initializeLibraryAndRestore(container)
                     }
+                    if (PermissionHelper.hasNotificationPermission(context)) {
+                        container.fcmUpdatePushManager.ensureRegisteredAsync()
+                    }
                     container.audioOutputManager.refreshPermissionsAndDevices()
+                }
+
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    if (granted || PermissionHelper.hasNotificationPermission(context)) {
+                        container.fcmUpdatePushManager.ensureRegisteredAsync()
+                    }
+                }
+
+                LaunchedEffect(hasAudioPermissionState, settings.hasPromptedNotificationPermission) {
+                    if (hasAudioPermissionState &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        !PermissionHelper.hasNotificationPermission(context) &&
+                        !settings.hasPromptedNotificationPermission
+                    ) {
+                        container.preferencesRepository.setHasPromptedNotificationPermission(true)
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
                 }
 
                 val installPermissionLauncher = rememberLauncherForActivityResult(
@@ -212,16 +231,26 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val container = (application as NovaMusicApplication).container
+        handleIncomingUpdateAndPlayerIntent(intent, container)
+        handleIncomingAudioIntent(intent, container)
+    }
+
+    private fun handleIncomingUpdateAndPlayerIntent(intent: Intent?, container: AppContainer) {
+        if (intent == null) return
         if (intent.getBooleanExtra(EXTRA_OPEN_PLAYER, false)) {
             openNowPlayingTrigger++
             intent.removeExtra(EXTRA_OPEN_PLAYER)
         }
-        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATES, false)) {
+        val updateNavData = PushUpdatePayload.extractUpdateIntentData(
+            intent = intent,
+            openUpdatesExtraKey = EXTRA_OPEN_UPDATES
+        )
+        if (updateNavData.shouldOpenUpdates) {
             openUpdatesTrigger++
-            intent.removeExtra(EXTRA_OPEN_UPDATES)
+            container.updateManager.onUpdateNotificationOpened(updateNavData.remoteVersionCode)
+            PushUpdatePayload.clearConsumedUpdateExtras(intent, EXTRA_OPEN_UPDATES)
         }
-        val container = (application as NovaMusicApplication).container
-        handleIncomingAudioIntent(intent, container)
     }
 
     private fun initializeLibraryAndRestore(container: AppContainer) {

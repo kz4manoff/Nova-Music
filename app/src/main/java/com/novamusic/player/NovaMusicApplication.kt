@@ -9,6 +9,8 @@ import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.data.scanner.MusicScanner
 import com.novamusic.player.database.NovaDatabase
+import com.novamusic.player.update.AndroidUpdateNotifier
+import com.novamusic.player.update.FcmUpdatePushManager
 import com.novamusic.player.update.UpdateManager
 import com.novamusic.player.widget.NovaWidgetCoordinator
 import com.novamusic.player.wrapped.ListeningTracker
@@ -46,6 +48,10 @@ class AppContainer(context: Context) {
         context = appContext,
         preferences = preferencesRepository
     )
+    val fcmUpdatePushManager: FcmUpdatePushManager = FcmUpdatePushManager(
+        context = appContext,
+        preferencesRepository = preferencesRepository
+    )
 }
 
 class NovaMusicApplication : Application() {
@@ -54,7 +60,9 @@ class NovaMusicApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AndroidUpdateNotifier.ensureNotificationChannel(this)
         container = AppContainer(this)
         container.audioOutputManager.start()
+        container.fcmUpdatePushManager.ensureRegisteredAsync()
     }
 }

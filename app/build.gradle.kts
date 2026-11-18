@@ -31,11 +31,11 @@ val hasReleaseSigning = !releaseStorePath.isNullOrBlank() &&
 
 val resolvedVersionCode = (findProperty("NOVA_VERSION_CODE") as String?)?.toIntOrNull()
     ?: System.getenv("NOVA_VERSION_CODE")?.toIntOrNull()
-    ?: 22
+    ?: 23
 
 val resolvedVersionName = (findProperty("NOVA_VERSION_NAME") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_VERSION_NAME")?.takeIf { it.isNotBlank() }
-    ?: "1.2.1"
+    ?: "1.2.3"
 
 val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }
@@ -166,7 +166,13 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.guava)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
+}
+
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }

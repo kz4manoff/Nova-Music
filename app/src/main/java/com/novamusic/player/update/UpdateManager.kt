@@ -138,6 +138,19 @@ class UpdateManager(
         }
     }
 
+    fun onUpdateNotificationOpened(remoteVersionCode: Int = 0) {
+        notifier.cancelUpdateNotification()
+        scope.launch {
+            if (remoteVersionCode > installedVersionCode) {
+                val lastNotified = preferencesStore.getLastNotifiedUpdateVersionCode()
+                if (remoteVersionCode > lastNotified) {
+                    preferencesStore.setLastNotifiedUpdateVersionCode(remoteVersionCode)
+                }
+            }
+            checkForUpdatesManual()
+        }
+    }
+
     suspend fun checkIfIntervalElapsed(): Boolean {
         val currentState = _uiState.value
         if (currentState is UpdateUiState.Downloading ||

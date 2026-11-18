@@ -62,7 +62,22 @@
                 <data android:scheme="file" />
                 <data android:mimeType="audio/*" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.novamusic.player.ACTION_OPEN_UPDATE_DETAILS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+
+        <!-- FCM Default Notification Channel, Branding Icon & Accent Color -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_nova_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/nova_red" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="nova_updates" />
 
         <service
             android:name=".service.MusicService"
@@ -71,6 +86,14 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".update.NovaFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
 

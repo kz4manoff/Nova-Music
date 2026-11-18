@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      send_push_notification:
+        description: 'Send FCM update push notification after release/sync completes'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -383,6 +388,30 @@ jobs:
           JAVA
           java "${VERIFY_DIR}/VerifyKeystore.java"
 
+      - name: Decode Firebase google-services.json (if configured)
+        id: firebase_config
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${GOOGLE_SERVICES_JSON_BASE64}" ]]; then
+            python3 - <<'PYEOF'
+          import base64, json, os, sys
+          raw = os.environ["GOOGLE_SERVICES_JSON_BASE64"].strip()
+          decoded = raw if raw.startswith("{") else base64.b64decode(raw).decode("utf-8")
+          parsed = json.loads(decoded)
+          assert "project_info" in parsed and "client" in parsed, "Invalid google-services.json structure."
+          with open("app/google-services.json", "w", encoding="utf-8") as f:
+              f.write(decoded)
+          print("Decoded app/google-services.json for FCM build.")
+          PYEOF
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GOOGLE_SERVICES_JSON_BASE64 secret is not configured. Building APK without bundled google-services.json; real FCM delivery requires app/google-services.json."
+          fi
+
       - name: Run Android Unit Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
@@ -482,10 +511,10 @@ jobs:
             echo "- **SHA-256**: \`${SHA256}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Cleanup keystore from runner
+      - name: Cleanup keystore and Firebase config from runner
         if: always()
         shell: bash
-        run: rm -f "${GITHUB_WORKSPACE}/nova-release.jks"
+        run: rm -f "${GITHUB_WORKSPACE}/nova-release.jks" "${GITHUB_WORKSPACE}/app/google-services.json"
 
       - name: Upload signed Release APK artifact
         if: steps.signing.outputs.ready == 'true'
@@ -566,6 +595,11 @@ jobs:
     needs: [test-and-build]
     if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.sync_website_only == true) || (needs.test-and-build.result == 'success' && needs.test-and-build.outputs.signing_ready == 'true' && needs.test-and-build.outputs.should_release == 'true')) }}
     runs-on: ubuntu-latest
+    outputs:
+      version_name: ${{ steps.release_apk.outputs.version_name }}
+      version_code: ${{ steps.release_apk.outputs.version_code }}
+      apk_url: ${{ steps.release_apk.outputs.apk_url }}
+      sha256: ${{ steps.release_apk.outputs.sha256 }}
     steps:
       - name: Validate NOVA_WEBSITE_TOKEN secret
         shell: bash
@@ -810,4 +844,45 @@ jobs:
             echo "- **SHA-256**: \`${SHA256}\`"
             echo "- **Commit SHA**: \`${COMMIT_SHA}\`"
             echo "- **Deployment**: Cloudflare Pages builds automatically from the \`${WEBSITE_BRANCH}\` commit (\`https://nova-website-1tg.pages.dev/update.json\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  send-push-notification:
+    needs: [test-and-build, sync-website]
+    if: ${{ always() && needs.sync-website.result == 'success' && (needs.test-and-build.outputs.should_release == 'true' || (github.event_name == 'workflow_dispatch' && inputs.send_push_notification == true)) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Send FCM Update Notification to nova_updates subscribers
+        shell: bash
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          VERSION_NAME: ${{ needs.sync-website.outputs.version_name }}
+          VERSION_CODE: ${{ needs.sync-website.outputs.version_code }}
+          APK_URL: ${{ needs.sync-website.outputs.apk_url }}
+          SHA256: ${{ needs.sync-website.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${FIREBASE_SERVICE_ACCOUNT_JSON}" ]]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON secret is not configured. Skipping FCM push notification broadcast for v${VERSION_NAME}."
+            {
+              echo "### FCM Push Notification Skipped"
+              echo "The signed APK release and \`update.json\` sync succeeded for **v${VERSION_NAME}** (Build ${VERSION_CODE}), but FCM push broadcast was skipped because \`FIREBASE_SERVICE_ACCOUNT_JSON\` is not configured in Repository Secrets."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          python3 scripts/send_fcm_update_push.py \
+            --version-name "${VERSION_NAME}" \
+            --version-code "${VERSION_CODE}" \
+            --description "NOVA MUSIC v${VERSION_NAME} (Build ${VERSION_CODE}) is ready to install." \
+            --apk-url "${APK_URL}" \
+            --sha256 "${SHA256}"
+
+          {
+            echo "### FCM Push Notification Sent"
+            echo "- **Topic**: \`nova_updates\`"
+            echo "- **Channel**: \`NOVA Updates\` (\`nova_updates\`)"
+            echo "- **Version**: \`v${VERSION_NAME}\` (\`versionCode: ${VERSION_CODE}\`)"
           } >> "$GITHUB_STEP_SUMMARY"

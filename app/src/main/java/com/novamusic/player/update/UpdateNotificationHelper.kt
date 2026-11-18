@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.novamusic.player.MainActivity
 import com.novamusic.player.NovaMusicApplication
 import com.novamusic.player.R
@@ -40,18 +41,35 @@ class AndroidUpdateNotifier(
             return false
         }
 
-        ensureNotificationChannel()
+        ensureNotificationChannel(appContext)
 
         val openUpdatesIntent = Intent(appContext, MainActivity::class.java).apply {
+            action = PushUpdatePayload.ACTION_OPEN_UPDATE_DETAILS
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(MainActivity.EXTRA_OPEN_UPDATES, true)
+            putExtra(PushUpdatePayload.EXTRA_REMOTE_VERSION_CODE, config.versionCode)
         }
         val openPendingIntent = PendingIntent.getActivity(
             appContext,
             REQUEST_CODE_OPEN_UPDATES,
             openUpdatesIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val updateNowIntent = Intent(appContext, MainActivity::class.java).apply {
+            action = PushUpdatePayload.ACTION_OPEN_UPDATE_DETAILS
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.EXTRA_OPEN_UPDATES, true)
+            putExtra(PushUpdatePayload.EXTRA_REMOTE_VERSION_CODE, config.versionCode)
+        }
+        val updateNowPendingIntent = PendingIntent.getActivity(
+            appContext,
+            REQUEST_CODE_UPDATE_NOW,
+            updateNowIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -71,33 +89,33 @@ class AndroidUpdateNotifier(
         }.getOrNull()
 
         val versionLabel = "Version ${config.latestVersion}"
-        val summaryText = "A new version of NOVA MUSIC is ready to install."
-        val expandedText = buildString {
-            append(summaryText)
-            append("\n")
-            append(versionLabel)
-            if (config.releaseNotes.isNotBlank()) {
-                append(" — ")
-                append(config.releaseNotes.trim())
-            }
-        }
+        val shortDescription = PushUpdatePayload.sanitizeShortDescription(config.releaseNotes)
+        val collapsedText = "$versionLabel — $shortDescription"
+        val expandedText = "$versionLabel is ready to install.\n$shortDescription"
 
         val builder = NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_nova_notification)
-            .setContentTitle("NOVA MUSIC Update Available")
-            .setContentText("$summaryText ($versionLabel)")
-            .setSubText(versionLabel)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(expandedText))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setColor(ContextCompat.getColor(appContext, R.color.nova_red))
+            .setContentTitle(NOTIFICATION_TITLE)
+            .setContentText(collapsedText)
+            .setSubText("NOVA MUSIC • v${config.latestVersion}")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .setBigContentTitle(NOTIFICATION_TITLE)
+                    .setSummaryText("NOVA MUSIC • $versionLabel")
+                    .bigText(expandedText)
+            )
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(openPendingIntent)
             .setDeleteIntent(dismissPendingIntent)
             .addAction(
-                0,
-                "View Update",
-                openPendingIntent
+                R.drawable.ic_nova_notification,
+                ACTION_UPDATE_NOW_LABEL,
+                updateNowPendingIntent
             )
 
         if (largeIconBitmap != null) {
@@ -105,7 +123,11 @@ class AndroidUpdateNotifier(
         }
 
         return try {
-            NotificationManagerCompat.from(appContext).notify(NOTIFICATION_ID, builder.build())
+            NotificationManagerCompat.from(appContext).notify(
+                NOTIFICATION_TAG,
+                NOTIFICATION_ID,
+                builder.build()
+            )
             true
         } catch (_: SecurityException) {
             false
@@ -114,37 +136,56 @@ class AndroidUpdateNotifier(
 
     override fun cancelUpdateNotification() {
         runCatching {
-            NotificationManagerCompat.from(appContext).cancel(NOTIFICATION_ID)
+            val mgr = NotificationManagerCompat.from(appContext)
+            mgr.cancel(NOTIFICATION_TAG, NOTIFICATION_ID)
+            mgr.cancel(NOTIFICATION_ID)
         }
-    }
-
-    private fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = appContext.getSystemService(NotificationManager::class.java) ?: return
-        val existing = manager.getNotificationChannel(CHANNEL_ID)
-        if (existing != null) return
-
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = CHANNEL_DESCRIPTION
-            enableVibration(true)
-            setShowBadge(true)
-        }
-        manager.createNotificationChannel(channel)
     }
 
     companion object {
-        const val CHANNEL_ID = "nova_app_updates"
-        const val CHANNEL_NAME = "App Updates"
-        const val CHANNEL_DESCRIPTION = "Alerts when a new verified release of NOVA MUSIC is ready to install."
+        const val CHANNEL_ID = "nova_updates"
+        const val CHANNEL_NAME = "NOVA Updates"
+        const val CHANNEL_DESCRIPTION = "Alerts when a new NOVA MUSIC release is available to install."
+        const val LEGACY_CHANNEL_ID = "nova_app_updates"
+        const val NOTIFICATION_TITLE = "New Update Available!"
+        const val ACTION_UPDATE_NOW_LABEL = "Update Now"
+        const val NOTIFICATION_TAG = "nova_update_latest"
         const val NOTIFICATION_ID = 4096
         const val REQUEST_CODE_OPEN_UPDATES = 4097
         const val REQUEST_CODE_DISMISS_UPDATE = 4098
+        const val REQUEST_CODE_UPDATE_NOW = 4099
         const val ACTION_DISMISS_UPDATE_NOTIFICATION = "com.novamusic.player.action.DISMISS_UPDATE_NOTIFICATION"
         const val EXTRA_DISMISSED_VERSION_CODE = "extra_dismissed_version_code"
+
+        fun ensureNotificationChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val manager = context.applicationContext.getSystemService(NotificationManager::class.java) ?: return
+            runCatching {
+                if (manager.getNotificationChannel(LEGACY_CHANNEL_ID) != null) {
+                    manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
+                }
+            }
+            val existing = manager.getNotificationChannel(CHANNEL_ID)
+            if (existing != null) {
+                if (existing.name?.toString() != CHANNEL_NAME) {
+                    existing.name = CHANNEL_NAME
+                    existing.description = CHANNEL_DESCRIPTION
+                    manager.createNotificationChannel(existing)
+                }
+                return
+            }
+
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = CHANNEL_DESCRIPTION
+                enableVibration(true)
+                setShowBadge(true)
+            }
+            manager.createNotificationChannel(channel)
+        }
     }
 }
 
