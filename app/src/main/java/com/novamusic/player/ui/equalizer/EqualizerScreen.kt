@@ -88,7 +88,7 @@ import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
-import com.novamusic.player.ui.theme.NovaSuccess
+import com.novamusic.player.ui.theme.NovaRedPrimary
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
@@ -200,7 +200,7 @@ fun EqualizerScreen(
                                 .clip(CircleShape)
                                 .background(
                                     when {
-                                        state.isEnabled && state.audioSessionId > 0 -> NovaSuccess
+                                        state.isEnabled && state.audioSessionId > 0 -> NovaRedPrimary
                                         state.isSupported -> accent
                                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                                     }
@@ -549,7 +549,7 @@ private fun FrequencyResponseCurve(
     val novaColors = LocalNovaColors.current
     val reducedMotion = LocalReducedMotion.current
     val activeColor by animateColorAsState(
-        targetValue = if (enabled) accentColor else Color(0xFF727684),
+        targetValue = if (enabled) accentColor else Color(0xFF6B6B6B),
         animationSpec = if (reducedMotion) snap() else tween(260),
         label = "eq_curve_color"
     )
@@ -722,7 +722,7 @@ private fun RotaryAudioKnob(
         ),
         label = "eq_knob_$title"
     )
-    val activeColor = if (enabled) accentColor else Color(0xFF6B7080)
+    val activeColor = if (enabled) accentColor else Color(0xFF6B6B6B)
     val trackColor = novaColors.recessedSurface
     val border = novaColors.borderSubtle
     val latestOnChange by rememberUpdatedState(onValueChange)
@@ -808,11 +808,7 @@ private fun RotaryAudioKnob(
                 val knobRadius = (size.minDimension / 2f) - 21.dp.toPx()
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = if (novaColors.isLight) {
-                            listOf(Color(0xFFFFFFFF), Color(0xFFD8DEE9))
-                        } else {
-                            listOf(Color(0xFF2B2E3A), Color(0xFF101116))
-                        },
+                        colors = listOf(Color(0xFF222222), Color(0xFF0E0E0E)),
                         center = Offset(center.x - knobRadius * 0.25f, center.y - knobRadius * 0.25f),
                         radius = knobRadius * 1.4f
                     ),
@@ -881,7 +877,7 @@ private fun VerticalEqBandFader(
     val novaColors = LocalNovaColors.current
     val dbValue = band.levelMillibels / 100f
     val dbLabel = String.format(Locale.US, "%+.0f", dbValue)
-    val trackBg = if (novaColors.isLight) Color(0x220F172A) else Color.White.copy(alpha = 0.14f)
+    val trackBg = Color.White.copy(alpha = 0.14f)
     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
     val activeFill = if (enabled) accentColor else inactiveColor
 

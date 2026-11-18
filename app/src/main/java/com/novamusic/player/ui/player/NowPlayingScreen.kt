@@ -749,10 +749,10 @@ private fun ArtworkShowcase(
                             .background(
                                 Brush.radialGradient(
                                     colors = listOf(
-                                        Color(0xFF282A33),
-                                        Color(0xFF0A0B0F),
-                                        Color(0xFF1E2029),
-                                        Color(0xFF060709)
+                                        Color(0xFF1E1E1E),
+                                        Color(0xFF080808),
+                                        Color(0xFF151515),
+                                        Color(0xFF040404)
                                     )
                                 )
                             )
@@ -790,7 +790,7 @@ private fun ArtworkShowcase(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF09090B))
+                                .background(Color(0xFF050505))
                                 .border(2.2.dp, palette.glow, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {

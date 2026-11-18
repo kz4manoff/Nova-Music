@@ -17,12 +17,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
-import kotlin.math.min
 
 @Immutable
 data class ArtworkPalette(
@@ -34,10 +34,10 @@ data class ArtworkPalette(
 
 val LocalArtworkPalette = staticCompositionLocalOf {
     ArtworkPalette(
-        primary = NovaPink,
-        secondary = NovaPurple,
-        glow = NovaPinkGlow,
-        deepTint = NovaPurpleDeep
+        primary = NovaRedPrimary,
+        secondary = NovaRedSecondary,
+        glow = NovaRedGlow,
+        deepTint = NovaCrimsonTint
     )
 }
 
@@ -74,37 +74,12 @@ object ArtworkColorExtractor {
     }
 
     fun defaultPalette(fallbackAccent: Color): ArtworkPalette {
-        if (fallbackAccent == NovaPink) {
-            return ArtworkPalette(
-                primary = NovaPink,
-                secondary = NovaPurple,
-                glow = NovaPinkGlow,
-                deepTint = NovaPurpleDeep
-            )
-        }
-        val hsv = FloatArray(3)
-        android.graphics.Color.colorToHSV(fallbackAccent.toArgb(), hsv)
-        val secondaryHue = (hsv[0] - 48f + 360f) % 360f
-        val secondary = Color(
-            android.graphics.Color.HSVToColor(
-                floatArrayOf(secondaryHue, (hsv[1] * 0.68f).coerceIn(0.32f, 0.80f), 0.62f)
-            )
-        )
-        val glow = Color(
-            android.graphics.Color.HSVToColor(
-                floatArrayOf(hsv[0], (hsv[1] * 0.78f).coerceIn(0.35f, 0.9f), 0.98f)
-            )
-        )
-        val deepTint = Color(
-            android.graphics.Color.HSVToColor(
-                floatArrayOf(secondaryHue, (hsv[1] * 0.68f).coerceIn(0.26f, 0.72f), 0.16f)
-            )
-        )
+        val redBase = constrainToCrimson(fallbackAccent)
         return ArtworkPalette(
-            primary = fallbackAccent,
-            secondary = secondary,
-            glow = glow,
-            deepTint = deepTint
+            primary = redBase,
+            secondary = lerp(redBase, NovaRedSecondary, 0.55f),
+            glow = lerp(redBase, NovaRedGlow, 0.50f),
+            deepTint = NovaCrimsonTint
         )
     }
 
@@ -130,156 +105,72 @@ object ArtworkColorExtractor {
         }.getOrNull()
     }
 
+    /**
+     * Derives subtle crimson luminance & warmth intensity from the active artwork while strictly
+     * keeping every hue locked within the Red & Crimson spectrum (no green/blue/purple/pink/yellow).
+     */
     private fun analyzeBitmap(bitmap: Bitmap, fallbackAccent: Color): ArtworkPalette {
         val width = bitmap.width
         val height = bitmap.height
         if (width <= 0 || height <= 0) return defaultPalette(fallbackAccent)
 
-        // Quantize colors into 12 hue buckets + neutral bucket
-        val bucketScores = FloatArray(13)
-        val bucketR = FloatArray(13)
-        val bucketG = FloatArray(13)
-        val bucketB = FloatArray(13)
-        val bucketWeights = FloatArray(13)
         val hsv = FloatArray(3)
-
-        val stepX = max(1, width / 24)
-        val stepY = max(1, height / 24)
+        val stepX = max(1, width / 16)
+        val stepY = max(1, height / 16)
+        var energySum = 0f
+        var warmthSum = 0f
+        var samples = 0
 
         var y = 0
         while (y < height) {
             var x = 0
             while (x < width) {
                 val pixel = bitmap.getPixel(x, y)
-                val alpha = android.graphics.Color.alpha(pixel)
-                if (alpha >= 180) {
+                if (android.graphics.Color.alpha(pixel) >= 160) {
                     val r = android.graphics.Color.red(pixel)
                     val g = android.graphics.Color.green(pixel)
                     val b = android.graphics.Color.blue(pixel)
                     android.graphics.Color.RGBToHSV(r, g, b, hsv)
-
-                    val hue = hsv[0]
-                    val sat = hsv[1]
-                    val valB = hsv[2]
-
-                    // Skip near-pure black/white noise slightly so rich artwork pigments dominate
-                    val lumPenalty = if (valB < 0.08f || valB > 0.96f && sat < 0.08f) 0.2f else 1f
-                    val vibrancyWeight = (0.35f + sat * 1.85f) * (0.3f + valB * 0.7f) * lumPenalty
-
-                    val bucket = if (sat < 0.14f) 12 else ((hue / 30f).toInt().coerceIn(0, 11))
-                    bucketScores[bucket] += vibrancyWeight
-                    bucketWeights[bucket] += 1f
-                    bucketR[bucket] += r
-                    bucketG[bucket] += g
-                    bucketB[bucket] += b
+                    energySum += (hsv[1] * 0.65f + hsv[2] * 0.35f)
+                    warmthSum += ((r - b) / 255f + 1f) * 0.5f
+                    samples++
                 }
                 x += stepX
             }
             y += stepY
         }
 
-        // Pick top chromatic bucket if meaningful, otherwise fallback nicely
-        var bestBucket = 0
-        var bestScore = -1f
-        for (i in 0..11) {
-            if (bucketScores[i] > bestScore && bucketWeights[i] > 0f) {
-                bestScore = bucketScores[i]
-                bestBucket = i
-            }
-        }
+        if (samples == 0) return defaultPalette(fallbackAccent)
 
-        if (bestScore <= 0.1f || bucketWeights[bestBucket] <= 0f) {
-            return defaultPalette(fallbackAccent)
-        }
+        val energy = (energySum / samples).coerceIn(0f, 1f)
+        val warmth = (warmthSum / samples).coerceIn(0f, 1f)
+        val base = constrainToCrimson(fallbackAccent)
 
-        val primaryColor = averagedColor(
-            r = bucketR[bestBucket] / bucketWeights[bestBucket],
-            g = bucketG[bestBucket] / bucketWeights[bestBucket],
-            b = bucketB[bestBucket] / bucketWeights[bestBucket],
-            minVal = 0.42f,
-            maxVal = 0.92f
-        )
-
-        // Pick second distinct chromatic bucket at least 2 buckets away on the color wheel
-        var secondBucket = -1
-        var secondScore = -1f
-        for (i in 0..11) {
-            val dist = min(kotlin.math.abs(i - bestBucket), 12 - kotlin.math.abs(i - bestBucket))
-            if (dist >= 2 && bucketWeights[i] >= 2f && bucketScores[i] > secondScore) {
-                secondScore = bucketScores[i]
-                secondBucket = i
-            }
-        }
-
-        val primaryHsv = FloatArray(3)
-        android.graphics.Color.colorToHSV(primaryColor.toArgb(), primaryHsv)
-
-        val secondaryColor = if (secondBucket != -1) {
-            averagedColor(
-                r = bucketR[secondBucket] / bucketWeights[secondBucket],
-                g = bucketG[secondBucket] / bucketWeights[secondBucket],
-                b = bucketB[secondBucket] / bucketWeights[secondBucket],
-                minVal = 0.28f,
-                maxVal = 0.78f
-            )
-        } else {
-            val shiftedHue = (primaryHsv[0] + 52f) % 360f
-            Color(
-                android.graphics.Color.HSVToColor(
-                    floatArrayOf(
-                        shiftedHue,
-                        (primaryHsv[1] * 0.78f).coerceIn(0.25f, 0.85f),
-                        (primaryHsv[2] * 0.72f).coerceIn(0.28f, 0.72f)
-                    )
-                )
-            )
-        }
-
-        val glowColor = Color(
-            android.graphics.Color.HSVToColor(
-                floatArrayOf(
-                    primaryHsv[0],
-                    (primaryHsv[1] * 0.92f).coerceIn(0.38f, 0.95f),
-                    0.98f
-                )
-            )
-        )
-
-        val deepTintColor = Color(
-            android.graphics.Color.HSVToColor(
-                floatArrayOf(
-                    primaryHsv[0],
-                    (primaryHsv[1] * 0.65f).coerceIn(0.20f, 0.72f),
-                    0.15f
-                )
-            )
-        )
+        val primary = lerp(NovaRedSecondary, lerp(base, NovaRedPrimary, warmth), 0.45f + energy * 0.55f)
+        val secondary = lerp(NovaRedMist, NovaRedSecondary, 0.45f + energy * 0.45f)
+        val glow = lerp(primary, NovaRedGlow, 0.40f + energy * 0.35f)
+        val deepTint = lerp(Color(0xFF0E0205), NovaCrimsonTint, 0.45f + energy * 0.55f)
 
         return ArtworkPalette(
-            primary = primaryColor,
-            secondary = secondaryColor,
-            glow = glowColor,
-            deepTint = deepTintColor
+            primary = primary,
+            secondary = secondary,
+            glow = glow,
+            deepTint = deepTint
         )
     }
 
-    private fun averagedColor(
-        r: Float,
-        g: Float,
-        b: Float,
-        minVal: Float,
-        maxVal: Float
-    ): Color {
+    private fun constrainToCrimson(color: Color): Color {
         val hsv = FloatArray(3)
-        android.graphics.Color.RGBToHSV(
-            r.toInt().coerceIn(0, 255),
-            g.toInt().coerceIn(0, 255),
-            b.toInt().coerceIn(0, 255),
-            hsv
-        )
-        hsv[1] = hsv[1].coerceIn(0.28f, 0.92f)
-        hsv[2] = hsv[2].coerceIn(minVal, maxVal)
-        return Color(android.graphics.Color.HSVToColor(hsv))
+        android.graphics.Color.colorToHSV(color.toArgb(), hsv)
+        // Lock strictly inside true red / crimson hues (346°..360° or 0°..6° -> never pink/orange)
+        val hue = if (hsv[0] in 7f..345f) {
+            if (hsv[0] < 180f) 354f else 348f
+        } else {
+            hsv[0]
+        }
+        val sat = hsv[1].coerceIn(0.72f, 0.96f)
+        val valB = hsv[2].coerceIn(0.72f, 1.0f)
+        return Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, valB)))
     }
 }
 

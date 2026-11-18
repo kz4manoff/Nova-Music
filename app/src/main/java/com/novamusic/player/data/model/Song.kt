@@ -169,12 +169,24 @@ enum class NotificationAppearance(val label: String, val description: String) {
 }
 
 enum class AccentColorOption(val label: String, val hex: Long) {
-    NOVA_PINK("Nova Pink", 0xFFFF4DA6),
-    ELECTRIC_ORANGE("Electric Orange", 0xFFFF8A32),
-    CRIMSON_PULSE("Crimson Pulse", 0xFFFF4D6D),
-    CYAN_NEON("Cyan Neon", 0xFF00D1FF),
-    EMERALD_MINT("Emerald Mint", 0xFF2CE59B),
-    VIOLET_AURA("Violet Aura", 0xFF9D7BFF)
+    CRIMSON_PULSE("Vibrant Red", 0xFFFF1744),
+    DEEP_CRIMSON("Deep Red", 0xFFD50032),
+    SCARLET_EMBER("Scarlet", 0xFFFF2E3B),
+    RUBY_CORE("Ruby Red", 0xFFE50914),
+    VELVET_BLOOD("Dark Crimson", 0xFFB71C1C),
+    FLARE_RED("Crimson Glow", 0xFFFF4569);
+
+    companion object {
+        fun fromStorageKey(raw: String?): AccentColorOption = when (raw?.trim()?.uppercase()) {
+            null, "", "NOVA_PINK", "CRIMSON_PULSE" -> CRIMSON_PULSE
+            "DEEP_CRIMSON", "VIOLET_AURA" -> DEEP_CRIMSON
+            "SCARLET_EMBER", "ELECTRIC_ORANGE" -> SCARLET_EMBER
+            "RUBY_CORE", "CYAN_NEON" -> RUBY_CORE
+            "VELVET_BLOOD", "EMERALD_MINT" -> VELVET_BLOOD
+            "FLARE_RED" -> FLARE_RED
+            else -> runCatching { valueOf(raw.trim().uppercase()) }.getOrDefault(CRIMSON_PULSE)
+        }
+    }
 }
 
 enum class RepeatModeOption {

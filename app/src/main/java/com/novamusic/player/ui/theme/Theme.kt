@@ -1,12 +1,10 @@
 package com.novamusic.player.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
@@ -37,17 +35,17 @@ data class NovaExtendedColors(
 
 val LocalNovaColors = staticCompositionLocalOf {
     NovaExtendedColors(
-        elevatedSurface = NovaAmoledSurfaceElevated,
-        recessedSurface = NovaAmoledSurfaceRecessed,
-        dockSurface = NovaAmoledDock,
-        borderSubtle = NovaAmoledBorder,
-        glassSurface = NovaAmoledSurface,
+        elevatedSurface = NovaGlassSurfaceElevated,
+        recessedSurface = NovaGlassSurfaceRecessed,
+        dockSurface = NovaDockSurface,
+        borderSubtle = NovaBorderSubtle,
+        glassSurface = NovaGlassSurface,
         glassHighlight = NovaGlassHighlightDark,
-        glassBorderTop = Color(0x48FFFFFF),
-        glassBorderBottom = NovaGlassBorderBottomDark,
-        glassShadow = Color(0x94000000),
-        innerShadowTop = Color(0x28FFFFFF),
-        innerShadowBottom = Color(0x42000000),
+        glassBorderTop = Color(0x3DFFFFFF),
+        glassBorderBottom = NovaBorderSubtle,
+        glassShadow = Color(0xCC000000),
+        innerShadowTop = Color(0x26FFFFFF),
+        innerShadowBottom = Color(0x52000000),
         isAmoled = true,
         isLight = false
     )
@@ -63,133 +61,65 @@ private val NovaShapes = Shapes(
 @Composable
 fun NovaMusicTheme(
     themeMode: ThemeMode = ThemeMode.AMOLED,
-    accentColor: AccentColorOption = AccentColorOption.NOVA_PINK,
+    accentColor: AccentColorOption = AccentColorOption.CRIMSON_PULSE,
     dynamicAccentColor: Color? = null,
     content: @Composable () -> Unit
 ) {
-    val systemDark = isSystemInDarkTheme()
-    val effectiveMode = when (themeMode) {
-        ThemeMode.SYSTEM -> if (systemDark) ThemeMode.DARK else ThemeMode.LIGHT
-        else -> themeMode
-    }
+    // Enforce unified Red & Black Liquid Glass appearance across every screen and mode.
+    val isPureBlack = themeMode == ThemeMode.AMOLED
     val accent = dynamicAccentColor ?: Color(accentColor.hex)
-    val secondaryAccent = if (dynamicAccentColor == null && accentColor == AccentColorOption.NOVA_PINK) {
-        NovaPurple
+    val secondaryAccent = if (accentColor == AccentColorOption.DEEP_CRIMSON) {
+        NovaRedPrimary
     } else {
-        accent.copy(alpha = 0.85f)
-    }
-    val isLight = effectiveMode == ThemeMode.LIGHT
-
-    val colorScheme = when (effectiveMode) {
-        ThemeMode.AMOLED -> darkColorScheme(
-            primary = accent,
-            onPrimary = Color(0xFF000000),
-            primaryContainer = accent.copy(alpha = 0.24f),
-            onPrimaryContainer = accent,
-            secondary = secondaryAccent,
-            onSecondary = Color(0xFF000000),
-            background = NovaAmoledBackground,
-            onBackground = NovaTextPrimaryDark,
-            surface = NovaAmoledSurface,
-            onSurface = NovaTextPrimaryDark,
-            surfaceVariant = NovaAmoledSurfaceElevated,
-            onSurfaceVariant = NovaTextSecondaryDark,
-            surfaceContainer = NovaAmoledSurfaceElevated,
-            surfaceContainerLow = NovaAmoledSurfaceElevated,
-            surfaceContainerHigh = NovaAmoledSurfaceElevated,
-            surfaceContainerHighest = NovaAmoledSurfaceElevated,
-            outline = NovaAmoledBorder,
-            error = NovaError
-        )
-        ThemeMode.DARK, ThemeMode.SYSTEM -> darkColorScheme(
-            primary = accent,
-            onPrimary = Color(0xFF000000),
-            primaryContainer = accent.copy(alpha = 0.24f),
-            onPrimaryContainer = accent,
-            secondary = secondaryAccent,
-            onSecondary = Color(0xFF000000),
-            background = NovaDarkBackground,
-            onBackground = NovaTextPrimaryDark,
-            surface = NovaDarkSurface,
-            onSurface = NovaTextPrimaryDark,
-            surfaceVariant = NovaDarkSurfaceElevated,
-            onSurfaceVariant = NovaTextSecondaryDark,
-            surfaceContainer = NovaDarkSurfaceElevated,
-            surfaceContainerLow = NovaDarkSurfaceElevated,
-            surfaceContainerHigh = NovaDarkSurfaceElevated,
-            surfaceContainerHighest = NovaDarkSurfaceElevated,
-            outline = NovaDarkBorder,
-            error = NovaError
-        )
-        ThemeMode.LIGHT -> lightColorScheme(
-            primary = accent,
-            onPrimary = Color.White,
-            primaryContainer = accent.copy(alpha = 0.16f),
-            onPrimaryContainer = accent,
-            secondary = secondaryAccent,
-            onSecondary = Color.White,
-            background = NovaLightBackground,
-            onBackground = NovaTextPrimaryLight,
-            surface = NovaLightSurface,
-            onSurface = NovaTextPrimaryLight,
-            surfaceVariant = NovaLightSurfaceElevated,
-            onSurfaceVariant = NovaTextSecondaryLight,
-            surfaceContainer = NovaLightSurfaceElevated,
-            surfaceContainerLow = NovaLightSurfaceElevated,
-            surfaceContainerHigh = NovaLightSurfaceElevated,
-            surfaceContainerHighest = NovaLightSurfaceElevated,
-            outline = NovaLightBorder,
-            error = NovaError
-        )
+        NovaRedSecondary
     }
 
-    val extended = when (effectiveMode) {
-        ThemeMode.AMOLED -> NovaExtendedColors(
-            elevatedSurface = NovaAmoledSurfaceElevated,
-            recessedSurface = NovaAmoledSurfaceRecessed,
-            dockSurface = NovaAmoledDock,
-            borderSubtle = NovaAmoledBorder,
-            glassSurface = NovaAmoledSurface,
-            glassHighlight = NovaGlassHighlightDark,
-            glassBorderTop = Color(0x5CE9D5FF),
-            glassBorderBottom = NovaGlassBorderBottomDark,
-            glassShadow = Color(0xCC090212),
-            innerShadowTop = Color(0x30FCE7F3),
-            innerShadowBottom = Color(0x5707020E),
-            isAmoled = true,
-            isLight = false
-        )
-        ThemeMode.DARK, ThemeMode.SYSTEM -> NovaExtendedColors(
-            elevatedSurface = NovaDarkSurfaceElevated,
-            recessedSurface = NovaDarkSurfaceRecessed,
-            dockSurface = NovaDarkDock,
-            borderSubtle = NovaDarkBorder,
-            glassSurface = NovaDarkSurface,
-            glassHighlight = NovaGlassHighlightDark,
-            glassBorderTop = Color(0x60F3E8FF),
-            glassBorderBottom = NovaGlassBorderBottomDark,
-            glassShadow = Color(0xA60B0318),
-            innerShadowTop = Color(0x33FCE7F3),
-            innerShadowBottom = Color(0x420A0414),
-            isAmoled = false,
-            isLight = false
-        )
-        ThemeMode.LIGHT -> NovaExtendedColors(
-            elevatedSurface = NovaLightSurfaceElevated,
-            recessedSurface = NovaLightSurfaceRecessed,
-            dockSurface = NovaLightDock,
-            borderSubtle = NovaLightBorder,
-            glassSurface = NovaLightSurface,
-            glassHighlight = NovaGlassHighlightLight,
-            glassBorderTop = Color(0xF5FFFFFF),
-            glassBorderBottom = NovaGlassBorderBottomLight,
-            glassShadow = Color(0x220F172A),
-            innerShadowTop = Color(0xD8FFFFFF),
-            innerShadowBottom = Color(0x160F172A),
-            isAmoled = false,
-            isLight = true
-        )
-    }
+    val backgroundColor = if (isPureBlack) NovaAmoledBackground else NovaBackgroundPrimary
+    val surfaceColor = if (isPureBlack) NovaAmoledSurface else NovaDarkSurface
+    val elevatedColor = if (isPureBlack) NovaAmoledSurfaceElevated else NovaDarkSurfaceElevated
+    val recessedColor = if (isPureBlack) NovaAmoledSurfaceRecessed else NovaDarkSurfaceRecessed
+    val dockColor = if (isPureBlack) NovaAmoledDock else NovaDarkDock
+
+    val colorScheme = darkColorScheme(
+        primary = accent,
+        onPrimary = Color.White,
+        primaryContainer = accent.copy(alpha = 0.22f),
+        onPrimaryContainer = Color.White,
+        secondary = secondaryAccent,
+        onSecondary = Color.White,
+        secondaryContainer = secondaryAccent.copy(alpha = 0.22f),
+        onSecondaryContainer = Color.White,
+        background = backgroundColor,
+        onBackground = NovaTextPrimaryDark,
+        surface = surfaceColor,
+        onSurface = NovaTextPrimaryDark,
+        surfaceVariant = NovaBackgroundSecondary,
+        onSurfaceVariant = NovaTextSecondaryDark,
+        surfaceContainer = NovaBackgroundSecondary,
+        surfaceContainerLow = elevatedColor,
+        surfaceContainerHigh = elevatedColor,
+        surfaceContainerHighest = Color(0xFF181818),
+        outline = NovaBorderSubtle,
+        outlineVariant = Color(0xFF1F1F1F),
+        error = NovaError,
+        onError = Color.White
+    )
+
+    val extended = NovaExtendedColors(
+        elevatedSurface = elevatedColor,
+        recessedSurface = recessedColor,
+        dockSurface = dockColor,
+        borderSubtle = NovaBorderSubtle,
+        glassSurface = surfaceColor,
+        glassHighlight = NovaGlassHighlightDark,
+        glassBorderTop = Color(0x3DFFFFFF),
+        glassBorderBottom = NovaBorderSubtle,
+        glassShadow = Color(0xCC000000),
+        innerShadowTop = Color(0x26FFFFFF),
+        innerShadowBottom = Color(0x52000000),
+        isAmoled = isPureBlack,
+        isLight = false
+    )
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -199,8 +129,8 @@ fun NovaMusicTheme(
                 window.statusBarColor = Color.Transparent.toArgb()
                 window.navigationBarColor = Color.Transparent.toArgb()
                 val insetsController = WindowCompat.getInsetsController(window, view)
-                insetsController.isAppearanceLightStatusBars = isLight
-                insetsController.isAppearanceLightNavigationBars = isLight
+                insetsController.isAppearanceLightStatusBars = false
+                insetsController.isAppearanceLightNavigationBars = false
             }
         }
     }

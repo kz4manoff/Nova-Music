@@ -71,8 +71,8 @@ import com.novamusic.player.ui.components.LiquidGlassSurface
 import com.novamusic.player.ui.components.LiquidGlassTopBar
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
-import com.novamusic.player.ui.theme.NovaOrangeDeep
-import com.novamusic.player.ui.theme.NovaOrangeGlow
+import com.novamusic.player.ui.theme.NovaRedGlow
+import com.novamusic.player.ui.theme.NovaRedSecondary
 import com.novamusic.player.utils.FormatUtils
 import java.util.Locale
 
@@ -147,7 +147,7 @@ fun PlaylistsScreen(
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(
                                     Brush.linearGradient(
-                                        colors = listOf(NovaOrangeGlow, accent, NovaOrangeDeep)
+                                        colors = listOf(NovaRedGlow, accent, NovaRedSecondary)
                                     )
                                 ),
                             contentAlignment = Alignment.Center
@@ -407,7 +407,7 @@ fun PlaylistDetailScreen(
                             .size(82.dp)
                             .shadow(16.dp, RoundedCornerShape(22.dp), ambientColor = accent, spotColor = accent)
                             .clip(RoundedCornerShape(22.dp))
-                            .background(Brush.linearGradient(listOf(NovaOrangeGlow, accent, NovaOrangeDeep))),
+                            .background(Brush.linearGradient(listOf(NovaRedGlow, accent, NovaRedSecondary))),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(

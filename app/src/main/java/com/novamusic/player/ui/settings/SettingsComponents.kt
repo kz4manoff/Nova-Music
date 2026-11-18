@@ -367,8 +367,7 @@ fun NovaGlassSwitch(
         targetValue = when {
             !enabled -> novaColors.recessedSurface.copy(alpha = 0.45f)
             checked -> accent
-            novaColors.isLight -> Color(0xFFD5DCE8)
-            else -> Color.White.copy(alpha = 0.16f)
+            else -> Color(0xFF242424)
         },
         animationSpec = if (reducedMotion) snap() else tween(220, easing = FastOutSlowInEasing),
         label = "nova_switch_track"
@@ -422,7 +421,7 @@ fun NovaGlassSwitch(
                 .clip(CircleShape)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.White, Color(0xFFF2F4F8))
+                        colors = listOf(Color.White, Color(0xFFEAEAEA))
                     )
                 )
         )
@@ -586,7 +585,7 @@ fun <T> NovaDropdownSettingRow(
     val performHaptic = rememberNovaHaptic()
     var expanded by remember { mutableStateOf(false) }
 
-    val menuBorderColor = if (novaColors.isLight) Color(0x220F172A) else Color.White.copy(alpha = 0.18f)
+    val menuBorderColor = Color.White.copy(alpha = 0.16f)
 
     Row(
         modifier = Modifier
@@ -965,7 +964,7 @@ fun NovaAccentColorPicker(
                             Icon(
                                 imageVector = Icons.Rounded.Check,
                                 contentDescription = option.label,
-                                tint = Color.Black,
+                                tint = Color.White,
                                 modifier = Modifier.size(15.dp)
                             )
                         }

@@ -95,11 +95,9 @@ import com.novamusic.player.ui.components.LocalReducedMotion
 import com.novamusic.player.ui.components.rememberNovaHaptic
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
-import com.novamusic.player.ui.theme.NovaPink
-import com.novamusic.player.ui.theme.NovaPinkGlow
-import com.novamusic.player.ui.theme.NovaPurple
-import com.novamusic.player.ui.theme.NovaPurpleGlow
-import com.novamusic.player.ui.theme.NovaSuccess
+import com.novamusic.player.ui.theme.NovaRedGlow
+import com.novamusic.player.ui.theme.NovaRedPrimary
+import com.novamusic.player.ui.theme.NovaRedSecondary
 import com.novamusic.player.update.UpdateUiState
 import com.novamusic.player.utils.FormatUtils
 import kotlinx.coroutines.delay
@@ -435,7 +433,7 @@ private fun ContactDeveloperSection(modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
             highlighted = true,
-            accentTint = lerp(NovaPink, NovaPurple, 0.48f),
+            accentTint = NovaRedPrimary,
             elevation = 14.dp,
             glassOpacity = 0.94f,
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -445,24 +443,24 @@ private fun ContactDeveloperSection(modifier: Modifier = Modifier) {
                     iconRes = R.drawable.ic_discord,
                     platformName = "Discord",
                     subtitle = DEVELOPER_DISCORD_USERNAME,
-                    badgeColors = listOf(Color(0xFF7C6CFF), NovaPurple),
+                    badgeColors = listOf(NovaRedPrimary, NovaRedSecondary),
                     trailingContent = {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(
                                     if (discordCopied) {
-                                        NovaSuccess.copy(alpha = 0.20f)
+                                        NovaRedPrimary.copy(alpha = 0.28f)
                                     } else {
-                                        NovaPink.copy(alpha = 0.18f)
+                                        NovaRedPrimary.copy(alpha = 0.16f)
                                     }
                                 )
                                 .border(
                                     width = 0.75.dp,
                                     color = if (discordCopied) {
-                                        NovaSuccess.copy(alpha = 0.55f)
+                                        NovaRedPrimary.copy(alpha = 0.75f)
                                     } else {
-                                        NovaPinkGlow.copy(alpha = 0.45f)
+                                        NovaRedGlow.copy(alpha = 0.45f)
                                     },
                                     shape = RoundedCornerShape(12.dp)
                                 )
@@ -484,7 +482,7 @@ private fun ContactDeveloperSection(modifier: Modifier = Modifier) {
                                     Icon(
                                         imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                                         contentDescription = if (copied) "Copied" else "Copy Discord username",
-                                        tint = if (copied) NovaSuccess else NovaPinkGlow,
+                                        tint = if (copied) Color.White else NovaRedGlow,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(5.dp))
@@ -493,7 +491,7 @@ private fun ContactDeveloperSection(modifier: Modifier = Modifier) {
                                         style = MaterialTheme.typography.labelMedium.copy(
                                             fontWeight = FontWeight.SemiBold
                                         ),
-                                        color = if (copied) NovaSuccess else if (novaColors.isLight) MaterialTheme.colorScheme.onSurface else Color.White
+                                        color = Color.White
                                     )
                                 }
                             }
@@ -512,22 +510,22 @@ private fun ContactDeveloperSection(modifier: Modifier = Modifier) {
                             .fillMaxWidth()
                             .padding(start = 52.dp, top = 2.dp, bottom = 8.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(NovaSuccess.copy(alpha = 0.14f))
-                            .border(0.65.dp, NovaSuccess.copy(alpha = 0.42f), RoundedCornerShape(10.dp))
+                            .background(NovaRedPrimary.copy(alpha = 0.16f))
+                            .border(0.65.dp, NovaRedPrimary.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Check,
                             contentDescription = null,
-                            tint = NovaSuccess,
+                            tint = NovaRedGlow,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Copied username \"$DEVELOPER_DISCORD_USERNAME\" to clipboard",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                            color = if (novaColors.isLight) MaterialTheme.colorScheme.onSurface else Color.White
+                            color = Color.White
                         )
                     }
                 }
@@ -538,15 +536,15 @@ private fun ContactDeveloperSection(modifier: Modifier = Modifier) {
                     iconRes = R.drawable.ic_instagram,
                     platformName = "Instagram",
                     subtitle = "@mohavmed.__",
-                    badgeColors = listOf(NovaPink, NovaPurple),
+                    badgeColors = listOf(NovaRedGlow, NovaRedSecondary),
                     trailingContent = {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(NovaPurple.copy(alpha = 0.22f))
+                                .background(NovaRedPrimary.copy(alpha = 0.16f))
                                 .border(
                                     width = 0.75.dp,
-                                    color = NovaPurpleGlow.copy(alpha = 0.45f),
+                                    color = NovaRedGlow.copy(alpha = 0.45f),
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
@@ -557,13 +555,13 @@ private fun ContactDeveloperSection(modifier: Modifier = Modifier) {
                                     style = MaterialTheme.typography.labelMedium.copy(
                                         fontWeight = FontWeight.SemiBold
                                     ),
-                                    color = if (novaColors.isLight) MaterialTheme.colorScheme.onSurface else Color.White
+                                    color = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
                                     contentDescription = "Open Instagram profile",
-                                    tint = NovaPurpleGlow,
+                                    tint = NovaRedGlow,
                                     modifier = Modifier.size(13.dp)
                                 )
                             }

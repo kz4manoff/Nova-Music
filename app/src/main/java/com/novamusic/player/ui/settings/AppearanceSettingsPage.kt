@@ -100,12 +100,11 @@ fun AppearanceSettingsPage(
                         Spacer(modifier = Modifier.height(10.dp))
                         NovaSegmentedGlassBar(
                             options = listOf(
-                                ThemeMode.SYSTEM to "System",
-                                ThemeMode.DARK to "Dark",
-                                ThemeMode.LIGHT to "Light",
+                                ThemeMode.SYSTEM to "Adaptive",
+                                ThemeMode.DARK to "Charcoal",
                                 ThemeMode.AMOLED to "AMOLED"
                             ),
-                            selected = settings.themeMode,
+                            selected = if (settings.themeMode == ThemeMode.LIGHT) ThemeMode.DARK else settings.themeMode,
                             onSelect = viewModel::setThemeMode
                         )
                     }

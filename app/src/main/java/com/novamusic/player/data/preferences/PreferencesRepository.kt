@@ -38,7 +38,7 @@ data class AppSettings(
     val hapticFeedback: Boolean = true,
     val keepScreenOn: Boolean = false,
     // Appearance
-    val accentColor: AccentColorOption = AccentColorOption.NOVA_PINK,
+    val accentColor: AccentColorOption = AccentColorOption.CRIMSON_PULSE,
     val artworkStyle: ArtworkStyle = ArtworkStyle.ROUNDED_CARD,
     val blurIntensity: Float = 1.0f,
     val playerAnimationStyle: PlayerAnimationStyle = PlayerAnimationStyle.FLUID,
@@ -171,8 +171,7 @@ class PreferencesRepository(private val context: Context) {
             dynamicColors = prefs[Keys.DYNAMIC_COLORS] ?: true,
             hapticFeedback = prefs[Keys.HAPTIC_FEEDBACK] ?: true,
             keepScreenOn = prefs[Keys.KEEP_SCREEN_ON] ?: false,
-            accentColor = prefs[Keys.ACCENT_COLOR]?.let { runCatching { AccentColorOption.valueOf(it) }.getOrNull() }
-                ?: AccentColorOption.NOVA_PINK,
+            accentColor = AccentColorOption.fromStorageKey(prefs[Keys.ACCENT_COLOR]),
             artworkStyle = prefs[Keys.ARTWORK_STYLE]?.let { runCatching { ArtworkStyle.valueOf(it) }.getOrNull() }
                 ?: ArtworkStyle.ROUNDED_CARD,
             blurIntensity = (prefs[Keys.BLUR_INTENSITY] ?: 1.0f).coerceIn(0.25f, 1.5f),

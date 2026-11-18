@@ -20,6 +20,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -107,9 +108,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -131,6 +135,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.novamusic.player.data.model.AudioOutputDevice
@@ -140,14 +147,19 @@ import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.PlayerUiState
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
-import com.novamusic.player.ui.theme.NovaPink
-import com.novamusic.player.ui.theme.NovaPinkGlow
-import com.novamusic.player.ui.theme.NovaPurple
-import com.novamusic.player.ui.theme.NovaPurpleDeep
-import com.novamusic.player.ui.theme.NovaPurpleGlow
+import com.novamusic.player.ui.theme.NovaBackgroundPrimary
+import com.novamusic.player.ui.theme.NovaBorderSubtle
+import com.novamusic.player.ui.theme.NovaCrimsonTint
+import com.novamusic.player.ui.theme.NovaRedGlow
+import com.novamusic.player.ui.theme.NovaRedMist
+import com.novamusic.player.ui.theme.NovaRedPrimary
+import com.novamusic.player.ui.theme.NovaRedSecondary
 import com.novamusic.player.utils.FormatUtils
 import kotlinx.coroutines.delay
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 val LocalReducedMotion = compositionLocalOf { false }
 val LocalHapticEnabled = compositionLocalOf { true }
@@ -190,9 +202,11 @@ data class LiquidGlassNavTab(
 )
 
 /**
- * Full-bleed atmospheric backdrop driven by extracted live album artwork colors,
- * hardware RenderEffect blur (API 31+ with frosted fallback on API 26-30),
- * and gentle ambient light scattering orbs.
+ * Full-bleed Dynamic Animated Red & Black Atmospheric Backdrop:
+ * - Permanent deep pure black (#000000 / #050505) canvas base
+ * - Soft, slow-drifting crimson light orbs (15s, 18s, 20s seamless sinusoidal cycles)
+ * - Gentle flowing red light mist waves across the background without heavy blur overhead
+ * - Lifecycle-aware (pauses in background), reduced-motion aware, and zero-recomposition in Canvas
  */
 @Composable
 fun LiquidGlassBackdrop(
@@ -201,156 +215,170 @@ fun LiquidGlassBackdrop(
     intensity: Float = 1f,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val novaColors = LocalNovaColors.current
     val palette = LocalArtworkPalette.current
-    val isLight = novaColors.isLight
-    val supportsHardwareBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val blurRadiusPx = with(LocalDensity.current) { (92f * intensity).dp.toPx() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val systemReducedMotion = rememberReducedMotion()
+    val reducedMotion = LocalReducedMotion.current || systemReducedMotion
 
-    val ambientTransition = rememberInfiniteTransition(label = "lg_backdrop_ambient")
-    val orbShift by ambientTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 10_500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "lg_orb_shift"
-    )
+    // Continuous time phase in [0f, 180f) — LCM of 12s, 15s, 18s, 20s guarantees seamless infinite loops.
+    val phaseState = remember { mutableFloatStateOf(0f) }
 
-    val backgroundBase = if (isLight) {
-        lerp(MaterialTheme.colorScheme.background, palette.primary, 0.08f)
-    } else if (novaColors.isAmoled) {
-        lerp(Color.Black, lerp(NovaPurpleDeep, palette.deepTint, 0.45f), 0.34f)
-    } else {
-        lerp(MaterialTheme.colorScheme.background, lerp(NovaPurpleDeep, palette.deepTint, 0.45f), 0.48f)
+    LaunchedEffect(lifecycleOwner, reducedMotion) {
+        if (reducedMotion) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var lastNanos = 0L
+            while (true) {
+                withInfiniteAnimationFrameNanos { frameNanos ->
+                    if (lastNanos != 0L) {
+                        val dt = ((frameNanos - lastNanos).coerceIn(0L, 100_000_000L)) / 1_000_000_000f
+                        phaseState.floatValue = (phaseState.floatValue + dt) % 180f
+                    }
+                    lastNanos = frameNanos
+                }
+            }
+        }
     }
+
+    val baseBlack = if (novaColors.isAmoled) Color.Black else NovaBackgroundPrimary
+    val clampedIntensity = intensity.coerceIn(0.45f, 1.45f)
+    val playBoost = if (isPlaying) 1.18f else 0.94f
+
+    val orbRedPrimary = lerp(NovaRedPrimary, palette.primary, 0.35f)
+    val orbRedSecondary = lerp(NovaRedSecondary, palette.secondary, 0.40f)
+    val orbRedMist = lerp(NovaRedMist, NovaRedGlow, 0.25f)
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(backgroundBase)
+            .background(baseBlack)
     ) {
-        if (artworkUri != null) {
-            SubcomposeAsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(artworkUri)
-                    .size(220)
-                    .crossfade(650)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val pulseScale = if (isPlaying) 1.38f + orbShift * 0.08f else 1.32f
-                        scaleX = pulseScale
-                        scaleY = pulseScale
-                        alpha = if (supportsHardwareBlur) {
-                            (if (isLight) 0.32f else if (novaColors.isAmoled) 0.30f else 0.40f) * intensity.coerceIn(0.65f, 1.35f)
-                        } else {
-                            if (isLight) 0.16f else 0.16f
-                        }
-                        if (supportsHardwareBlur) {
-                            renderEffect = RenderEffect
-                                .createBlurEffect(blurRadiusPx, blurRadiusPx, Shader.TileMode.MIRROR)
-                                .asComposeRenderEffect()
-                        }
-                    }
-            )
-        }
-
-        // Soft pink and purple ambient lighting blended gently with active artwork palette
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val playBoost = if (isPlaying) 1.18f else 0.94f
+            if (w <= 0f || h <= 0f) return@Canvas
 
-            val pinkAmbient = lerp(NovaPink, palette.primary, 0.42f)
-            val purpleAmbient = lerp(NovaPurple, palette.secondary, 0.40f)
-            val glowAmbient = lerp(NovaPinkGlow, NovaPurpleGlow, 0.50f)
+            val t = phaseState.floatValue
+            val tau = (2.0 * PI).toFloat()
 
-            val primaryOrb = Offset(
-                x = w * (0.18f + 0.20f * orbShift),
-                y = h * (0.14f + 0.08f * orbShift)
+            val a1 = (t / 15f) * tau
+            val a2 = (t / 18f) * tau
+            val a3 = (t / 20f) * tau
+            val wavePhase = (t / 12f) * tau
+
+            // 1. Large upper-left / top-center vibrant red ambient orb
+            val orb1Center = Offset(
+                x = w * (0.24f + 0.18f * cos(a1)),
+                y = h * (0.16f + 0.09f * sin(a1))
             )
+            val orb1Radius = w * 0.96f
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        pinkAmbient.copy(alpha = (if (isLight) 0.22f else 0.30f) * playBoost * intensity.coerceAtMost(1.2f)),
+                        orbRedPrimary.copy(alpha = (0.23f * playBoost * clampedIntensity).coerceAtMost(0.38f)),
+                        orbRedSecondary.copy(alpha = (0.10f * playBoost * clampedIntensity).coerceAtMost(0.18f)),
                         Color.Transparent
                     ),
-                    center = primaryOrb,
-                    radius = w * 0.90f
+                    center = orb1Center,
+                    radius = orb1Radius
                 ),
-                radius = w * 0.90f,
-                center = primaryOrb
+                radius = orb1Radius,
+                center = orb1Center
             )
 
-            val secondaryOrb = Offset(
-                x = w * (0.86f - 0.20f * orbShift),
-                y = h * (0.70f - 0.12f * orbShift)
+            // 2. Large lower-right deep crimson orb orbiting counter-phase
+            val orb2Center = Offset(
+                x = w * (0.78f + 0.18f * sin(a2)),
+                y = h * (0.72f + 0.11f * cos(a2))
             )
+            val orb2Radius = w * 0.98f
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        purpleAmbient.copy(alpha = (if (isLight) 0.20f else 0.32f) * intensity.coerceAtMost(1.2f)),
+                        orbRedSecondary.copy(alpha = (0.24f * clampedIntensity).coerceAtMost(0.36f)),
+                        NovaCrimsonTint.copy(alpha = (0.16f * clampedIntensity).coerceAtMost(0.26f)),
                         Color.Transparent
                     ),
-                    center = secondaryOrb,
-                    radius = w * 0.92f
+                    center = orb2Center,
+                    radius = orb2Radius
                 ),
-                radius = w * 0.92f,
-                center = secondaryOrb
+                radius = orb2Radius,
+                center = orb2Center
             )
 
-            val glowOrb = Offset(
-                x = w * (0.50f + 0.12f * (0.5f - orbShift)),
-                y = h * 0.40f
+            // 3. Soft center-mid crimson atmospheric glow breathing subtly
+            val breathe = 0.88f + 0.12f * sin(a3)
+            val orb3Center = Offset(
+                x = w * (0.50f + 0.14f * cos(a3 * 1f)),
+                y = h * (0.43f + 0.06f * sin(a1))
             )
+            val orb3Radius = w * 0.72f * breathe
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        glowAmbient.copy(alpha = (if (isLight) 0.12f else 0.12f) * playBoost),
+                        orbRedMist.copy(alpha = (0.14f * playBoost * clampedIntensity).coerceAtMost(0.24f)),
                         Color.Transparent
                     ),
-                    center = glowOrb,
-                    radius = w * 0.68f
+                    center = orb3Center,
+                    radius = orb3Radius
                 ),
-                radius = w * 0.68f,
-                center = glowOrb
+                radius = orb3Radius,
+                center = orb3Center
+            )
+
+            // 4. Flowing crimson light mist wave across mid-frame
+            val waveBaseY = h * 0.36f
+            val waveAmp = h * 0.055f
+            val waveBandH = h * 0.26f
+            val steps = 8
+            val wavePath = Path().apply {
+                for (i in 0..steps) {
+                    val f = i.toFloat() / steps
+                    val x = f * w
+                    val y = waveBaseY + sin(wavePhase + f * 3.4f) * waveAmp
+                    if (i == 0) moveTo(x, y) else lineTo(x, y)
+                }
+                for (i in steps downTo 0) {
+                    val f = i.toFloat() / steps
+                    val x = f * w
+                    val y = waveBaseY + waveBandH + cos(wavePhase * 1f + f * 2.8f) * (waveAmp * 0.85f)
+                    lineTo(x, y)
+                }
+                close()
+            }
+            drawPath(
+                path = wavePath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        orbRedPrimary.copy(alpha = (0.055f * playBoost * clampedIntensity).coerceAtMost(0.11f)),
+                        orbRedSecondary.copy(alpha = (0.035f * clampedIntensity).coerceAtMost(0.08f)),
+                        Color.Transparent
+                    ),
+                    startY = waveBaseY - waveAmp,
+                    endY = waveBaseY + waveBandH + waveAmp
+                )
+            )
+
+            // 5. Crisp deep-black atmospheric vignette preserving razor-sharp contrast
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = if (novaColors.isAmoled) {
+                        listOf(
+                            Color(0x66000000),
+                            Color(0x99030102),
+                            Color(0xEB000000)
+                        )
+                    } else {
+                        listOf(
+                            Color(0x52050505),
+                            Color(0x88050505),
+                            Color(0xE0050505)
+                        )
+                    }
+                )
             )
         }
-
-        // Atmospheric readability gradient veil anchored in deep black & dark purple
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = if (isLight) {
-                            listOf(
-                                Color(0x9EF5F7FC),
-                                Color(0x88EEF2F9),
-                                Color(0xDBEBEEF6)
-                            )
-                        } else if (novaColors.isAmoled) {
-                            listOf(
-                                Color(0x7804010A),
-                                Color(0xB2020006),
-                                Color(0xF5000000)
-                            )
-                        } else {
-                            listOf(
-                                Color(0x5C090314),
-                                Color(0x8F06020E),
-                                Color(0xE8020005)
-                            )
-                        }
-                    )
-                )
-        )
     }
 }
 
@@ -408,11 +436,7 @@ fun LiquidGlassSurface(
         } else {
             lerp(solidBase, Color.White, if (isLight) 0.45f else 0.06f)
         }
-        val bottomTint = if (isLight) {
-            lerp(solidBase, Color(0xFFE9EEF7), 0.35f)
-        } else {
-            lerp(solidBase, Color.Black, 0.22f)
-        }
+        val bottomTint = lerp(solidBase, Color.Black, 0.22f)
         Brush.verticalGradient(colors = listOf(topTint, solidBase, bottomTint))
     } else {
         Brush.verticalGradient(
@@ -797,9 +821,9 @@ fun LiquidGlassTopBar(
 }
 
 /**
- * Floating iOS Liquid Glass Frosted Bar container shared between the Mini-Player Pill
- * and Bottom Navigation Bar with authentic dark translucency, inner optical blur shimmer,
- * specular edge reflections, and thin semi-transparent white border.
+ * Floating Optical Liquid Glass Frosted Bar container shared between the Mini-Player Pill
+ * and Bottom Navigation Bar with authentic dark charcoal (#181818) translucency, subtle
+ * crimson ambient depth, specular top catchlight, and thin semi-transparent border.
  */
 @Composable
 private fun FloatingFrostedGlassContainer(
@@ -809,11 +833,6 @@ private fun FloatingFrostedGlassContainer(
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val novaColors = LocalNovaColors.current
-    val isLight = novaColors.isLight
-    val supportsHardwareBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val blurRadiusPx = with(LocalDensity.current) { 20.dp.toPx() }
-
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -825,41 +844,21 @@ private fun FloatingFrostedGlassContainer(
         label = "fg_glass_scale"
     )
 
-    val glassFill = if (isLight) {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xE8FFFFFF),
-                Color(0xDCF3F6FC),
-                Color(0xE8EAEFF8)
-            )
+    val glassFill = Brush.verticalGradient(
+        colors = listOf(
+            Color(0xE31C1C1C),
+            Color(0xEB151515),
+            Color(0xF50E0E0E)
         )
-    } else {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xDE1B112B),
-                Color(0xE610091C),
-                Color(0xF0080510)
-            )
-        )
-    }
+    )
 
-    val borderBrush = if (isLight) {
-        Brush.linearGradient(
-            colors = listOf(
-                Color.White,
-                Color(0x330F172A),
-                Color.White.copy(alpha = 0.85f)
-            )
+    val borderBrush = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.24f),
+            NovaBorderSubtle,
+            NovaRedPrimary.copy(alpha = 0.26f)
         )
-    } else {
-        Brush.linearGradient(
-            colors = listOf(
-                lerp(Color.White, NovaPinkGlow, 0.35f).copy(alpha = 0.42f),
-                Color.White.copy(alpha = 0.14f),
-                lerp(Color.White, NovaPurpleGlow, 0.42f).copy(alpha = 0.32f)
-            )
-        )
-    }
+    )
 
     val clickableModifier = if (onClick != null) {
         Modifier.clickable(
@@ -877,62 +876,47 @@ private fun FloatingFrostedGlassContainer(
             .shadow(
                 elevation = elevation,
                 shape = shape,
-                ambientColor = if (isLight) Color(0x280F172A) else NovaPurple.copy(alpha = 0.38f),
-                spotColor = if (isLight) Color(0x2E0F172A) else NovaPink.copy(alpha = 0.32f)
+                ambientColor = Color.Black.copy(alpha = 0.72f),
+                spotColor = NovaRedSecondary.copy(alpha = 0.28f)
             )
             .clip(shape)
             .background(glassFill)
             .then(clickableModifier)
     ) {
-        // Subtle blurred internal pink & purple ambient reflection layer for realistic frosted depth
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .graphicsLayer {
-                    if (supportsHardwareBlur) {
-                        renderEffect = RenderEffect
-                            .createBlurEffect(blurRadiusPx, blurRadiusPx, Shader.TileMode.CLAMP)
-                            .asComposeRenderEffect()
-                    }
-                }
-                .drawBehind {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                if (isLight) Color.White.copy(alpha = 0.45f) else NovaPink.copy(alpha = 0.14f),
-                                Color.Transparent
-                            ),
-                            center = Offset(size.width * 0.18f, size.height * 0.12f),
-                            radius = size.width * 0.56f
-                        ),
-                        radius = size.width * 0.56f,
-                        center = Offset(size.width * 0.18f, size.height * 0.12f)
-                    )
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                if (isLight) Color.White.copy(alpha = 0.30f) else NovaPurple.copy(alpha = 0.18f),
-                                Color.Transparent
-                            ),
-                            center = Offset(size.width * 0.84f, size.height * 0.84f),
-                            radius = size.width * 0.50f
-                        ),
-                        radius = size.width * 0.50f,
-                        center = Offset(size.width * 0.84f, size.height * 0.84f)
-                    )
-                }
-        )
-
-        // Optical specular top-edge sheen & inner depth shadow
+        // Subtle lightweight crimson & specular reflection layer
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .drawBehind {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                NovaRedPrimary.copy(alpha = 0.12f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.16f, size.height * 0.14f),
+                            radius = size.width * 0.52f
+                        ),
+                        radius = size.width * 0.52f,
+                        center = Offset(size.width * 0.16f, size.height * 0.14f)
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                NovaRedSecondary.copy(alpha = 0.14f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.85f, size.height * 0.86f),
+                            radius = size.width * 0.48f
+                        ),
+                        radius = size.width * 0.48f,
+                        center = Offset(size.width * 0.85f, size.height * 0.86f)
+                    )
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = if (isLight) 0.52f else 0.13f),
-                                Color.White.copy(alpha = if (isLight) 0.14f else 0.03f),
+                                Color.White.copy(alpha = 0.11f),
+                                Color.White.copy(alpha = 0.025f),
                                 Color.Transparent
                             ),
                             startY = 0f,
@@ -943,7 +927,7 @@ private fun FloatingFrostedGlassContainer(
                         brush = Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.Black.copy(alpha = if (isLight) 0.04f else 0.24f)
+                                Color.Black.copy(alpha = 0.28f)
                             ),
                             startY = size.height * 0.68f,
                             endY = size.height
@@ -958,10 +942,167 @@ private fun FloatingFrostedGlassContainer(
 }
 
 /**
- * Floating iOS Liquid Glass Rounded Rectangular Bottom Navigation Bar featuring:
- * - Four evenly spaced minimalist white icons with no text labels (Home, Library, Search, Playlists)
- * - Larger horizontal rounded-rectangle dark frosted-glass active indicator with pink/purple ambient glow
- * - Smooth spring-driven sliding transition and continuous horizontal finger-tracking swipe/tap support
+ * Dedicated Apple-inspired Liquid Glass capsule container for the bottom navigation bar.
+ * Features controlled frosted background blur diffusion, deep translucent obsidian tint,
+ * thin semi-transparent white borders, convex specular glass reflections, and reactive
+ * crimson ambient depth that follows the active navigation orb without altering layout bounds.
+ */
+@Composable
+private fun AppleLiquidGlassNavBarContainer(
+    activeSlotFraction: () -> Float,
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val supportsHardwareBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val blurRadiusPx = with(LocalDensity.current) { 22.dp.toPx() }
+
+    val glassBase = Brush.verticalGradient(
+        colors = listOf(
+            Color(0xA6161616),
+            Color(0xBC0C0C0C),
+            Color(0xD2060606)
+        )
+    )
+
+    val rimBorder = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.42f),
+            Color.White.copy(alpha = 0.14f),
+            NovaRedGlow.copy(alpha = 0.24f),
+            Color.White.copy(alpha = 0.20f)
+        )
+    )
+
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = 24.dp,
+                shape = shape,
+                ambientColor = NovaRedPrimary.copy(alpha = 0.28f),
+                spotColor = Color.Black.copy(alpha = 0.88f)
+            )
+            .clip(shape)
+            .background(glassBase)
+    ) {
+        // Controlled frosted internal glass refraction & reactive ambient crimson lighting
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    if (supportsHardwareBlur) {
+                        renderEffect = RenderEffect
+                            .createBlurEffect(blurRadiusPx, blurRadiusPx, Shader.TileMode.CLAMP)
+                            .asComposeRenderEffect()
+                    }
+                }
+                .drawBehind {
+                    val f = activeSlotFraction().coerceIn(0f, 1f)
+                    val activeCenterX = size.width * f
+
+                    // Subtle crimson refraction pool drifting smoothly beneath the active glass circle
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                NovaRedPrimary.copy(alpha = if (supportsHardwareBlur) 0.24f else 0.16f),
+                                NovaRedSecondary.copy(alpha = if (supportsHardwareBlur) 0.12f else 0.08f),
+                                Color.Transparent
+                            ),
+                            center = Offset(activeCenterX, size.height * 0.56f),
+                            radius = size.height * 1.65f
+                        ),
+                        radius = size.height * 1.65f,
+                        center = Offset(activeCenterX, size.height * 0.56f)
+                    )
+
+                    // Subtle cool-white & crimson opposing ambient depth across bar edges
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (supportsHardwareBlur) 0.10f else 0.06f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.16f, size.height * 0.10f),
+                            radius = size.width * 0.38f
+                        ),
+                        radius = size.width * 0.38f,
+                        center = Offset(size.width * 0.16f, size.height * 0.10f)
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                NovaRedMist.copy(alpha = if (supportsHardwareBlur) 0.22f else 0.14f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.86f, size.height * 0.88f),
+                            radius = size.width * 0.42f
+                        ),
+                        radius = size.width * 0.42f,
+                        center = Offset(size.width * 0.86f, size.height * 0.88f)
+                    )
+                }
+        )
+
+        // Crisp convex optical specular reflections, glass thickness bevel, and semi-transparent border
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .drawBehind {
+                    val f = activeSlotFraction().coerceIn(0f, 1f)
+
+                    // Top convex Liquid Glass catchlight
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.22f),
+                                Color.White.copy(alpha = 0.055f),
+                                Color.Transparent
+                            ),
+                            startY = 0f,
+                            endY = size.height * 0.38f
+                        )
+                    )
+
+                    // Subtle traveling glossy refraction sheen linked to active orb motion
+                    val sweepCenterX = size.width * (0.20f + 0.60f * f)
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.06f),
+                                Color.Transparent
+                            ),
+                            start = Offset(sweepCenterX - size.width * 0.28f, 0f),
+                            end = Offset(sweepCenterX + size.width * 0.28f, size.height)
+                        )
+                    )
+
+                    // Bottom inner glass shadow & subtle crimson bounce reflection
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                NovaRedPrimary.copy(alpha = 0.07f),
+                                Color.Black.copy(alpha = 0.36f)
+                            ),
+                            startY = size.height * 0.60f,
+                            endY = size.height
+                        )
+                    )
+                }
+                .border(width = 0.9.dp, brush = rimBorder, shape = shape)
+        )
+
+        content()
+    }
+}
+
+/**
+ * Floating Apple-inspired Liquid Glass Bottom Navigation Bar adapted to NOVA MUSIC's Red & Black theme:
+ * - Translucent frosted pill container with controlled blur, specular highlights, and thin white rim
+ * - Floating circular glass lens surrounding the active navigation icon with crimson/dark-red reflections
+ * - Fluid liquid deformation, gentle icon scaling, and finger-tracking horizontal swipe & tap support
+ * - Strictly preserves all existing navigation items, icons, labels, routes, and click actions
  */
 @Composable
 fun LiquidGlassTabBar(
@@ -970,8 +1111,6 @@ fun LiquidGlassTabBar(
     onSelectTab: (LiquidGlassNavTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val novaColors = LocalNovaColors.current
-    val isLight = novaColors.isLight
     val reducedMotion = LocalReducedMotion.current
     val animStyle = LocalPlayerAnimationStyle.current
     val navBarAppearance = LocalNavBarAppearance.current
@@ -1002,13 +1141,14 @@ fun LiquidGlassTabBar(
 
     var dragSlot by remember { mutableStateOf<Float?>(null) }
     var dragVelocityX by remember { mutableFloatStateOf(0f) }
+    var isTouchingBar by remember { mutableStateOf(false) }
 
     val indicatorSlot by animateFloatAsState(
         targetValue = dragSlot ?: selectedIndex.toFloat(),
         animationSpec = when {
             dragSlot != null || reducedMotion -> snap()
             animStyle == PlayerAnimationStyle.MINIMAL -> tween(180, easing = FastOutSlowInEasing)
-            else -> spring(dampingRatio = 0.78f, stiffness = 380f)
+            else -> spring(dampingRatio = 0.72f, stiffness = 360f)
         },
         label = "lg_pill_indicator_slot"
     )
@@ -1019,13 +1159,20 @@ fun LiquidGlassTabBar(
         label = "lg_pill_vel_stretch"
     )
 
+    val touchLensBoost by animateFloatAsState(
+        targetValue = if (isTouchingBar && !reducedMotion) 1.06f else 1f,
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.65f, stiffness = 440f),
+        label = "lg_lens_touch_scale"
+    )
+
     val barHeight = when (navBarAppearance) {
-        NavBarAppearance.FLOATING_GLASS -> 58.dp
-        NavBarAppearance.COMPACT -> 54.dp
-        NavBarAppearance.MINIMAL_PILL -> 52.dp
+        NavBarAppearance.FLOATING_GLASS -> 62.dp
+        NavBarAppearance.COMPACT -> 58.dp
+        NavBarAppearance.MINIMAL_PILL -> 54.dp
     }
-    val barShape = RoundedCornerShape(26.dp)
+    val barShape = RoundedCornerShape(50)
     val horizontalInset = 16.dp
+    val tabCount = tabs.size.coerceAtLeast(1)
 
     Box(
         modifier = modifier
@@ -1034,98 +1181,129 @@ fun LiquidGlassTabBar(
             .padding(bottom = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        FloatingFrostedGlassContainer(
+        AppleLiquidGlassNavBarContainer(
+            activeSlotFraction = { (indicatorSlot + 0.5f) / tabCount.toFloat() },
+            shape = barShape,
             modifier = Modifier
                 .widthIn(max = 440.dp)
-                .fillMaxWidth(),
-            shape = barShape,
-            elevation = 22.dp
+                .fillMaxWidth()
         ) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(barHeight)
-                    .padding(horizontal = 6.dp, vertical = 6.dp)
+                    .padding(horizontal = 6.dp, vertical = 5.dp)
             ) {
                 val count = tabs.size.coerceAtLeast(1)
                 val tabWidth = maxWidth / count
                 val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
                 val innerPadPx = with(density) { 6.dp.toPx() }
-                val indicatorHeight = minOf(40.dp, (maxHeight - 2.dp).coerceAtLeast(34.dp))
-                val indicatorWidth = (tabWidth - 6.dp).coerceAtLeast(62.dp)
-                val indicatorWidthPx = with(density) { indicatorWidth.toPx() }
-                val indicatorShape = RoundedCornerShape(18.dp)
+                // Circular active glass orb sized noticeably larger than the 22dp icon & inactive area
+                val lensDiameter = minOf((maxHeight - 2.dp).coerceAtLeast(44.dp), (tabWidth - 8.dp).coerceAtLeast(44.dp))
+                val lensDiameterPx = with(density) { lensDiameter.toPx() }
 
                 val isDragging = dragSlot != null
                 val travelDelta = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
                     0f
                 } else {
                     val settleDist = if (isDragging) 0f else abs(selectedIndex.toFloat() - indicatorSlot)
-                    val velStretch = (abs(animatedVelocityX) / 1700f).coerceIn(0f, 0.75f)
-                    (settleDist * 0.35f + velStretch * 0.45f).coerceIn(0f, 0.75f)
+                    val velStretch = (abs(animatedVelocityX) / 1600f).coerceIn(0f, 0.85f)
+                    (settleDist * 0.42f + velStretch * 0.48f).coerceIn(0f, 0.85f)
                 }
-                val highlightScaleX = 1f + travelDelta * 0.08f
-                val highlightScaleY = 1f - travelDelta * 0.04f
-                val indicatorX = indicatorSlot * tabWidthPx + (tabWidthPx - indicatorWidthPx) / 2f
+                val lensScaleX = (1f + travelDelta * 0.24f) * touchLensBoost
+                val lensScaleY = (1f - travelDelta * 0.07f) * touchLensBoost
+                val indicatorX = indicatorSlot * tabWidthPx + (tabWidthPx - lensDiameterPx) / 2f
 
-                // Wide horizontal rounded-rectangle dark frosted glass active indicator smoothly sliding behind icons
+                // Floating Circular Liquid Glass Lens with subtle crimson/dark-red reflections & optical depth
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .width(indicatorWidth)
-                        .height(indicatorHeight)
+                        .size(lensDiameter)
                         .graphicsLayer {
                             translationX = indicatorX
-                            scaleX = highlightScaleX
-                            scaleY = highlightScaleY
+                            scaleX = lensScaleX
+                            scaleY = lensScaleY
                         }
-                        .clip(indicatorShape)
+                        .shadow(
+                            elevation = 12.dp,
+                            shape = CircleShape,
+                            ambientColor = NovaRedPrimary.copy(alpha = 0.45f),
+                            spotColor = NovaRedSecondary.copy(alpha = 0.40f)
+                        )
+                        .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
-                                colors = if (isLight) {
-                                    listOf(
-                                        Color.White.copy(alpha = 0.96f),
-                                        lerp(Color.White, NovaPinkGlow, 0.20f).copy(alpha = 0.84f)
-                                    )
-                                } else {
-                                    listOf(
-                                        NovaPink.copy(alpha = 0.24f),
-                                        Color(0xD41B102E),
-                                        NovaPurple.copy(alpha = 0.28f)
-                                    )
-                                }
+                                colors = listOf(
+                                    NovaRedPrimary.copy(alpha = 0.26f),
+                                    Color(0xCC180509),
+                                    NovaRedSecondary.copy(alpha = 0.34f)
+                                )
                             )
                         )
                         .drawBehind {
-                            drawRect(
-                                brush = Brush.verticalGradient(
+                            // Soft top-left specular glass droplet highlight
+                            drawCircle(
+                                brush = Brush.radialGradient(
                                     colors = listOf(
-                                        Color.White.copy(alpha = if (isLight) 0.44f else 0.16f),
+                                        Color.White.copy(alpha = 0.26f),
+                                        NovaRedGlow.copy(alpha = 0.10f),
                                         Color.Transparent
                                     ),
-                                    startY = 0f,
-                                    endY = size.height * 0.48f
-                                )
+                                    center = Offset(size.width * 0.30f, size.height * 0.22f),
+                                    radius = size.width * 0.48f
+                                ),
+                                radius = size.width * 0.48f,
+                                center = Offset(size.width * 0.30f, size.height * 0.22f)
+                            )
+
+                            // Soft lower-right crimson internal glass reflection
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        NovaRedPrimary.copy(alpha = 0.24f),
+                                        NovaRedSecondary.copy(alpha = 0.12f),
+                                        Color.Transparent
+                                    ),
+                                    center = Offset(size.width * 0.72f, size.height * 0.78f),
+                                    radius = size.width * 0.52f
+                                ),
+                                radius = size.width * 0.52f,
+                                center = Offset(size.width * 0.72f, size.height * 0.78f)
+                            )
+
+                            // Crisp upper inner optical rim arc for authentic spherical glass depth
+                            val inset = 2.dp.toPx()
+                            drawArc(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.White.copy(alpha = 0.34f),
+                                        Color.Transparent
+                                    )
+                                ),
+                                startAngle = 205f,
+                                sweepAngle = 130f,
+                                useCenter = false,
+                                topLeft = Offset(inset, inset),
+                                size = Size(size.width - inset * 2f, size.height - inset * 2f),
+                                style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round)
                             )
                         }
                         .border(
-                            width = 0.9.dp,
+                            width = 0.95.dp,
                             brush = Brush.linearGradient(
-                                colors = if (isLight) {
-                                    listOf(Color.White, NovaPink.copy(alpha = 0.35f))
-                                } else {
-                                    listOf(
-                                        lerp(Color.White, NovaPinkGlow, 0.45f).copy(alpha = 0.56f),
-                                        Color.White.copy(alpha = 0.18f),
-                                        lerp(Color.White, NovaPurpleGlow, 0.55f).copy(alpha = 0.48f)
-                                    )
-                                }
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.54f),
+                                    NovaRedGlow.copy(alpha = 0.34f),
+                                    Color.White.copy(alpha = 0.14f),
+                                    NovaRedSecondary.copy(alpha = 0.42f)
+                                )
                             ),
-                            shape = indicatorShape
+                            shape = CircleShape
                         )
                 )
 
-                // Gesture overlay handling both tap and continuous horizontal finger-following swipe
+                // Gesture overlay preserving exact tap & continuous horizontal finger-following swipe
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1133,6 +1311,7 @@ fun LiquidGlassTabBar(
                             val touchSlop = viewConfiguration.touchSlop
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
+                                isTouchingBar = true
                                 val velocityTracker = VelocityTracker()
                                 velocityTracker.addPosition(down.uptimeMillis, down.position)
                                 var isHorizontalTracking = false
@@ -1142,87 +1321,91 @@ fun LiquidGlassTabBar(
                                 )
                                 var pointerId = down.id
 
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Main)
-                                    val change = event.changes.firstOrNull { it.id == pointerId }
-                                        ?: event.changes.firstOrNull { it.pressed }
-                                        ?: break
-                                    pointerId = change.id
+                                try {
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Main)
+                                        val change = event.changes.firstOrNull { it.id == pointerId }
+                                            ?: event.changes.firstOrNull { it.pressed }
+                                            ?: break
+                                        pointerId = change.id
 
-                                    if (change.isConsumed && !isHorizontalTracking) {
-                                        dragSlot = null
-                                        dragVelocityX = 0f
-                                        return@awaitEachGesture
-                                    }
-
-                                    if (!change.pressed) {
-                                        val finalTabs = latestTabs
-                                        if (isHorizontalTracking) {
-                                            val activeSlot = dragSlot ?: clampFingerSlot(
-                                                change.position.x,
-                                                size.width.toFloat(),
-                                                innerPadPx,
-                                                finalTabs.size
-                                            )
-                                            val snappedIdx = nearestSlotIndex(activeSlot, finalTabs.size)
-                                            dragSlot = null
-                                            dragVelocityX = 0f
-                                            if (finalTabs.isNotEmpty()) {
-                                                performHaptic()
-                                                latestOnSelectTab(finalTabs[snappedIdx])
-                                            }
-                                        } else {
-                                            val tappedSlot = clampFingerSlot(
-                                                down.position.x,
-                                                size.width.toFloat(),
-                                                innerPadPx,
-                                                finalTabs.size
-                                            )
-                                            val tappedIdx = nearestSlotIndex(tappedSlot, finalTabs.size)
-                                            dragSlot = null
-                                            dragVelocityX = 0f
-                                            if (finalTabs.isNotEmpty()) {
-                                                performHaptic()
-                                                latestOnSelectTab(finalTabs[tappedIdx])
-                                            }
-                                        }
-                                        return@awaitEachGesture
-                                    }
-
-                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
-                                    val totalDx = change.position.x - down.position.x
-                                    val totalDy = change.position.y - down.position.y
-
-                                    if (!isHorizontalTracking) {
-                                        if (abs(totalDy) > touchSlop && abs(totalDy) > abs(totalDx) * 1.25f) {
+                                        if (change.isConsumed && !isHorizontalTracking) {
                                             dragSlot = null
                                             dragVelocityX = 0f
                                             return@awaitEachGesture
                                         }
-                                        if (abs(totalDx) > touchSlop * 0.55f && abs(totalDx) > abs(totalDy) * 1.1f) {
-                                            isHorizontalTracking = true
+
+                                        if (!change.pressed) {
+                                            val finalTabs = latestTabs
+                                            if (isHorizontalTracking) {
+                                                val activeSlot = dragSlot ?: clampFingerSlot(
+                                                    change.position.x,
+                                                    size.width.toFloat(),
+                                                    innerPadPx,
+                                                    finalTabs.size
+                                                )
+                                                val snappedIdx = nearestSlotIndex(activeSlot, finalTabs.size)
+                                                dragSlot = null
+                                                dragVelocityX = 0f
+                                                if (finalTabs.isNotEmpty()) {
+                                                    performHaptic()
+                                                    latestOnSelectTab(finalTabs[snappedIdx])
+                                                }
+                                            } else {
+                                                val tappedSlot = clampFingerSlot(
+                                                    down.position.x,
+                                                    size.width.toFloat(),
+                                                    innerPadPx,
+                                                    finalTabs.size
+                                                )
+                                                val tappedIdx = nearestSlotIndex(tappedSlot, finalTabs.size)
+                                                dragSlot = null
+                                                dragVelocityX = 0f
+                                                if (finalTabs.isNotEmpty()) {
+                                                    performHaptic()
+                                                    latestOnSelectTab(finalTabs[tappedIdx])
+                                                }
+                                            }
+                                            return@awaitEachGesture
+                                        }
+
+                                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                        val totalDx = change.position.x - down.position.x
+                                        val totalDy = change.position.y - down.position.y
+
+                                        if (!isHorizontalTracking) {
+                                            if (abs(totalDy) > touchSlop && abs(totalDy) > abs(totalDx) * 1.25f) {
+                                                dragSlot = null
+                                                dragVelocityX = 0f
+                                                return@awaitEachGesture
+                                            }
+                                            if (abs(totalDx) > touchSlop * 0.55f && abs(totalDx) > abs(totalDy) * 1.1f) {
+                                                isHorizontalTracking = true
+                                                change.consume()
+                                            }
+                                        }
+
+                                        if (isHorizontalTracking) {
                                             change.consume()
+                                            val rawSlot = clampFingerSlot(
+                                                pointerX = change.position.x,
+                                                containerWidthPx = size.width.toFloat(),
+                                                horizontalPaddingPx = innerPadPx,
+                                                tabCount = count
+                                            )
+                                            dragSlot = applyMagneticSlotPull(rawSlot)
+                                            val instVelX = velocityTracker.calculateVelocity().x
+                                            dragVelocityX = dragVelocityX * 0.55f + instVelX * 0.45f
+
+                                            val hoveredNow = nearestSlotIndex(rawSlot, count)
+                                            if (hoveredNow != lastHoveredIdx) {
+                                                lastHoveredIdx = hoveredNow
+                                                performHaptic()
+                                            }
                                         }
                                     }
-
-                                    if (isHorizontalTracking) {
-                                        change.consume()
-                                        val rawSlot = clampFingerSlot(
-                                            pointerX = change.position.x,
-                                            containerWidthPx = size.width.toFloat(),
-                                            horizontalPaddingPx = innerPadPx,
-                                            tabCount = count
-                                        )
-                                        dragSlot = applyMagneticSlotPull(rawSlot)
-                                        val instVelX = velocityTracker.calculateVelocity().x
-                                        dragVelocityX = dragVelocityX * 0.55f + instVelX * 0.45f
-
-                                        val hoveredNow = nearestSlotIndex(rawSlot, count)
-                                        if (hoveredNow != lastHoveredIdx) {
-                                            lastHoveredIdx = hoveredNow
-                                            performHaptic()
-                                        }
-                                    }
+                                } finally {
+                                    isTouchingBar = false
                                 }
 
                                 dragSlot = null
@@ -1235,12 +1418,11 @@ fun LiquidGlassTabBar(
                         val proximity = iconProximityWeight(indicatorSlot, index)
                         val isSelected = index == selectedIndex
                         val iconScale = if (reducedMotion) {
-                            if (isSelected) 1.06f else 1f
+                            if (isSelected) 1.07f else 1f
                         } else {
-                            1f + proximity * 0.08f
+                            1f + proximity * 0.10f
                         }
-                        val baseForeground = if (isLight) Color(0xFF0E121B) else Color.White
-                        val iconTint = baseForeground.copy(alpha = 0.62f + proximity * 0.38f)
+                        val iconTint = Color.White.copy(alpha = 0.58f + proximity * 0.42f)
 
                         Box(
                             modifier = Modifier
@@ -1309,11 +1491,7 @@ fun LiquidGlassArtwork(
             .clip(shape)
             .background(
                 Brush.radialGradient(
-                    colors = if (novaColors.isLight) {
-                        listOf(palette.primary.copy(alpha = 0.24f), Color(0xFFE5EAF3), Color(0xFFD9E0EC))
-                    } else {
-                        listOf(palette.primary.copy(alpha = 0.34f), Color(0xFF171923), Color(0xFF090A0E))
-                    }
+                    colors = listOf(palette.primary.copy(alpha = 0.30f), Color(0xFF181818), Color(0xFF050505))
                 )
             ),
         contentAlignment = Alignment.Center
@@ -1481,8 +1659,8 @@ fun LiquidGlassMiniPlayer(
             val miniGestureAlpha = (1f - verticalDragFraction * 0.45f).coerceIn(0.45f, 1f)
 
             val pillShape = RoundedCornerShape(50)
-            val primaryInk = if (isLight) Color(0xFF0E121B) else Color.White
-            val secondaryInk = if (isLight) Color(0xFF525A6B) else Color.White.copy(alpha = 0.68f)
+            val primaryInk = Color.White
+            val secondaryInk = Color(0xFFA0A0A0)
 
             Box(
                 modifier = Modifier
@@ -1666,18 +1844,18 @@ fun LiquidGlassMiniPlayer(
                                     }
                                     .clip(CircleShape)
                                     .background(
-                                        if (isLight) {
-                                            Color.White.copy(alpha = if (playerState.isPlaying) 0.96f else 0.82f)
+                                        if (playerState.isPlaying) {
+                                            NovaRedPrimary.copy(alpha = 0.26f)
                                         } else {
-                                            Color.White.copy(alpha = if (playerState.isPlaying) 0.20f else 0.12f)
+                                            Color.White.copy(alpha = 0.12f)
                                         }
                                     )
                                     .border(
                                         width = 0.75.dp,
-                                        color = if (isLight) {
-                                            Color(0x280F172A)
+                                        color = if (playerState.isPlaying) {
+                                            NovaRedGlow.copy(alpha = 0.56f)
                                         } else {
-                                            Color.White.copy(alpha = if (playerState.isPlaying) 0.38f else 0.24f)
+                                            Color.White.copy(alpha = 0.22f)
                                         },
                                         shape = CircleShape
                                     )
@@ -1729,12 +1907,10 @@ fun LiquidGlassMiniPlayer(
                                         scaleY = nextBtnScale
                                     }
                                     .clip(CircleShape)
-                                    .background(
-                                        if (isLight) Color.White.copy(alpha = 0.76f) else Color.White.copy(alpha = 0.10f)
-                                    )
+                                    .background(Color.White.copy(alpha = 0.10f))
                                     .border(
                                         width = 0.65.dp,
-                                        color = if (isLight) Color(0x200F172A) else Color.White.copy(alpha = 0.20f),
+                                        color = Color.White.copy(alpha = 0.20f),
                                         shape = CircleShape
                                     )
                                     .clickable(
@@ -1762,11 +1938,9 @@ fun LiquidGlassMiniPlayer(
                                 .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp)
-                                .height(1.8.dp)
+                                .height(2.dp)
                                 .clip(RoundedCornerShape(50))
-                                .background(
-                                    if (isLight) Color(0x180F172A) else Color.White.copy(alpha = 0.12f)
-                                )
+                                .background(Color.White.copy(alpha = 0.12f))
                         ) {
                             Box(
                                 modifier = Modifier
@@ -1774,7 +1948,13 @@ fun LiquidGlassMiniPlayer(
                                     .fillMaxHeight()
                                     .clip(RoundedCornerShape(50))
                                     .background(
-                                        if (isLight) Color(0xCC0E121B) else Color.White.copy(alpha = 0.85f)
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                NovaRedSecondary,
+                                                NovaRedPrimary,
+                                                NovaRedGlow
+                                            )
+                                        )
                                     )
                             )
                         }
@@ -1860,7 +2040,7 @@ fun LiquidGlassSeekBar(
             val corner = CornerRadius(h / 2f, h / 2f)
 
             drawRoundRect(
-                color = if (novaColors.isLight) Color(0x240F172A) else Color.White.copy(alpha = 0.22f),
+                color = Color.White.copy(alpha = 0.18f),
                 topLeft = Offset(0f, y),
                 size = Size(size.width, h),
                 cornerRadius = corner
@@ -1871,8 +2051,9 @@ fun LiquidGlassSeekBar(
                 drawRoundRect(
                     brush = Brush.horizontalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.88f),
-                            accentColor
+                            NovaRedSecondary,
+                            accentColor,
+                            NovaRedGlow
                         )
                     ),
                     topLeft = Offset(0f, y),
@@ -1910,14 +2091,9 @@ fun LiquidGlassSheet(
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val novaColors = LocalNovaColors.current
     val palette = LocalArtworkPalette.current
-    val containerTint = if (novaColors.isLight) {
-        Color(0xF8F5F7FC)
-    } else {
-        lerp(Color(0xF812141E), palette.deepTint, 0.28f)
-    }
-    val scrimTint = Color.Black.copy(alpha = if (novaColors.isLight) 0.42f else 0.62f)
+    val containerTint = lerp(Color(0xFA101010), palette.deepTint, 0.24f)
+    val scrimTint = Color.Black.copy(alpha = 0.68f)
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -1932,9 +2108,7 @@ fun LiquidGlassSheet(
                     .width(42.dp)
                     .height(4.5.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(
-                        if (novaColors.isLight) Color(0x330F172A) else Color.White.copy(alpha = 0.36f)
-                    )
+                    .background(Color.White.copy(alpha = 0.34f))
             )
         },
         modifier = modifier,
@@ -1976,28 +2150,27 @@ fun LiquidGlassPlaybackModeButton(
     )
     val resolvedTint by animateColorAsState(
         targetValue = when {
-            playbackMode == PlaybackMode.SMART_SHUFFLE -> lerp(accent, NovaPinkGlow, 0.38f)
-            isActive -> lerp(accent, NovaPinkGlow, 0.22f)
-            isLight -> Color(0xFF334155)
-            else -> Color.White.copy(alpha = 0.62f)
+            playbackMode == PlaybackMode.SMART_SHUFFLE -> lerp(accent, NovaRedGlow, 0.38f)
+            isActive -> lerp(accent, NovaRedGlow, 0.22f)
+            else -> Color.White.copy(alpha = 0.66f)
         },
         animationSpec = if (reducedMotion) snap() else tween(200),
         label = "lg_mode_tint"
     )
 
-    val activeTopColor = lerp(accent, NovaPink, 0.45f)
-    val activeBottomColor = lerp(accent, NovaPurple, 0.55f)
+    val activeTopColor = lerp(accent, NovaRedPrimary, 0.45f)
+    val activeBottomColor = lerp(accent, NovaRedSecondary, 0.55f)
 
     val bgBrush = Brush.verticalGradient(
         colors = listOf(
             lerp(
-                Color.White.copy(alpha = if (isLight) 0.90f else 0.14f),
+                Color.White.copy(alpha = 0.14f),
                 activeTopColor.copy(alpha = if (playbackMode == PlaybackMode.SMART_SHUFFLE) 0.38f else 0.30f),
                 activeFraction
             ),
             lerp(
-                novaColors.glassSurface.copy(alpha = if (isLight) 0.66f else 0.28f),
-                activeBottomColor.copy(alpha = 0.22f),
+                novaColors.glassSurface.copy(alpha = 0.36f),
+                activeBottomColor.copy(alpha = 0.24f),
                 activeFraction
             )
         )
@@ -2133,7 +2306,7 @@ fun LiquidGlassPlaybackModeButton(
                         Icon(
                             imageVector = Icons.Rounded.AutoAwesome,
                             contentDescription = null,
-                            tint = lerp(NovaPurpleGlow, Color.White, 0.36f),
+                            tint = lerp(NovaRedGlow, Color.White, 0.36f),
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .size(10.dp)
@@ -2207,32 +2380,26 @@ fun LiquidGlassPlayerControls(
                     .shadow(
                         elevation = 24.dp,
                         shape = CircleShape,
-                        ambientColor = palette.glow.copy(alpha = 0.65f),
-                        spotColor = accent.copy(alpha = 0.72f)
+                        ambientColor = NovaRedPrimary.copy(alpha = 0.65f),
+                        spotColor = NovaRedGlow.copy(alpha = 0.72f)
                     )
                     .clip(CircleShape)
                     .background(
                         Brush.verticalGradient(
-                            colors = if (novaColors.isLight) {
-                                listOf(
-                                    Color.White.copy(alpha = 0.96f),
-                                    lerp(Color.White, palette.primary, 0.16f).copy(alpha = 0.88f)
-                                )
-                            } else {
-                                listOf(
-                                    Color.White.copy(alpha = 0.28f),
-                                    lerp(Color.White, palette.primary, 0.35f).copy(alpha = 0.16f),
-                                    Color.White.copy(alpha = 0.10f)
-                                )
-                            }
+                            colors = listOf(
+                                lerp(Color(0xFF242424), accent, 0.34f).copy(alpha = 0.94f),
+                                lerp(Color(0xFF181818), NovaRedPrimary, 0.28f).copy(alpha = 0.92f),
+                                lerp(Color(0xFF0C0C0C), NovaRedSecondary, 0.22f).copy(alpha = 0.95f)
+                            )
                         )
                     )
                     .border(
                         width = 1.dp,
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = if (novaColors.isLight) 1f else 0.68f),
-                                Color.White.copy(alpha = 0.14f)
+                                Color.White.copy(alpha = 0.52f),
+                                NovaRedPrimary.copy(alpha = 0.58f),
+                                NovaRedSecondary.copy(alpha = 0.36f)
                             )
                         ),
                         shape = CircleShape
@@ -2255,7 +2422,7 @@ fun LiquidGlassPlayerControls(
                     Icon(
                         imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (playing) "Pause" else "Play",
-                        tint = if (novaColors.isLight) MaterialTheme.colorScheme.onBackground else Color.White,
+                        tint = Color.White,
                         modifier = Modifier.size(42.dp)
                     )
                 }

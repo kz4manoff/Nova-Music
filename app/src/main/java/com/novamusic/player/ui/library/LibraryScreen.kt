@@ -116,8 +116,8 @@ import com.novamusic.player.ui.components.TrackInfoDialog
 import com.novamusic.player.ui.components.shareAudioTrack
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
-import com.novamusic.player.ui.theme.NovaGold
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
+import com.novamusic.player.ui.theme.NovaRedPrimary
 import kotlin.math.abs
 
 @Composable
@@ -189,7 +189,7 @@ fun LibraryScreen(
                         iconSize = 19.dp,
                         onClick = { showSortMenu = true }
                     )
-                    val menuBorderColor = if (novaColors.isLight) Color(0x220F172A) else Color.White.copy(alpha = 0.18f)
+                    val menuBorderColor = Color.White.copy(alpha = 0.16f)
                     DropdownMenu(
                         expanded = showSortMenu,
                         onDismissRequest = { showSortMenu = false },
@@ -854,7 +854,7 @@ private fun FoldersManagerContent(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 highlighted = folder.isFavorite,
-                accentTint = if (folder.isFavorite) NovaGold else accent,
+                accentTint = if (folder.isFavorite) NovaRedPrimary else accent,
                 elevation = 8.dp,
                 contentPadding = PaddingValues(14.dp),
                 onClick = { onFolderClick(folder) }
@@ -896,7 +896,7 @@ private fun FoldersManagerContent(
                         Icon(
                             imageVector = if (folder.isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                             contentDescription = "Favorite Folder",
-                            tint = if (folder.isFavorite) NovaGold else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (folder.isFavorite) NovaRedPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

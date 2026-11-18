@@ -84,9 +84,9 @@ import androidx.compose.ui.graphics.lerp
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.ui.theme.NovaMonoTelemetry
-import com.novamusic.player.ui.theme.NovaPink
-import com.novamusic.player.ui.theme.NovaPinkGlow
-import com.novamusic.player.ui.theme.NovaPurple
+import com.novamusic.player.ui.theme.NovaRedGlow
+import com.novamusic.player.ui.theme.NovaRedPrimary
+import com.novamusic.player.ui.theme.NovaRedSecondary
 import com.novamusic.player.utils.FormatUtils
 
 @Composable
@@ -369,7 +369,7 @@ private fun HomeFloatingHeader(
             modifier = Modifier.size(42.dp),
             shape = RoundedCornerShape(15.dp),
             highlighted = hasPendingUpdate,
-            accentTint = lerp(NovaPink, NovaPurple, 0.45f),
+            accentTint = NovaRedPrimary,
             elevation = 12.dp,
             onClick = onOpenSettings
         ) {
@@ -378,17 +378,10 @@ private fun HomeFloatingHeader(
                     .fillMaxSize()
                     .background(
                         Brush.linearGradient(
-                            colors = if (novaColors.isLight) {
-                                listOf(
-                                    Color.White.copy(alpha = 0.72f),
-                                    NovaPinkGlow.copy(alpha = 0.16f)
-                                )
-                            } else {
-                                listOf(
-                                    NovaPink.copy(alpha = 0.22f),
-                                    NovaPurple.copy(alpha = 0.24f)
-                                )
-                            }
+                            colors = listOf(
+                                Color(0xCC181818),
+                                NovaRedSecondary.copy(alpha = if (hasPendingUpdate) 0.30f else 0.16f)
+                            )
                         )
                     ),
                 contentAlignment = Alignment.Center
@@ -396,7 +389,7 @@ private fun HomeFloatingHeader(
                 Icon(
                     imageVector = Icons.Rounded.Settings,
                     contentDescription = "Open Settings",
-                    tint = if (novaColors.isLight) MaterialTheme.colorScheme.onBackground else Color.White,
+                    tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 if (hasPendingUpdate) {
@@ -406,8 +399,8 @@ private fun HomeFloatingHeader(
                             .padding(7.dp)
                             .size(7.dp)
                             .clip(CircleShape)
-                            .background(NovaPinkGlow)
-                            .border(1.dp, Color.Black.copy(alpha = 0.65f), CircleShape)
+                            .background(NovaRedGlow)
+                            .border(1.dp, Color.Black.copy(alpha = 0.72f), CircleShape)
                     )
                 }
             }

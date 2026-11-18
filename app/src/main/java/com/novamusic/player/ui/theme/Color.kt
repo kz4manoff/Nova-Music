@@ -2,53 +2,46 @@ package com.novamusic.player.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// NOVA MUSIC — Deep Black & Dark Purple Liquid Glass Palette
+// NOVA MUSIC — Unified Red & Black Liquid Glass Palette
 val NovaAmoledBackground = Color(0xFF000000)
-val NovaAmoledSurface = Color(0x20180B29)
-val NovaAmoledSurfaceElevated = Color(0xF70E0718)
-val NovaAmoledSurfaceRecessed = Color(0x57090412)
-val NovaAmoledDock = Color(0xDC0B0614)
-val NovaAmoledBorder = Color(0x3DF5D0FE)
+val NovaBackgroundPrimary = Color(0xFF050505)
+val NovaBackgroundSecondary = Color(0xFF101010)
 
-// Deep Obsidian-Purple Liquid Glass Palette
-val NovaDarkBackground = Color(0xFF05020B)
-val NovaDarkSurface = Color(0x24201038)
-val NovaDarkSurfaceElevated = Color(0xF7150C24)
-val NovaDarkSurfaceRecessed = Color(0x5210081E)
-val NovaDarkDock = Color(0xDC110920)
-val NovaDarkBorder = Color(0x42F5D0FE)
+// Translucent Charcoal Glass Surfaces (#181818 with layered translucency)
+val NovaGlassSurface = Color(0xBF181818)
+val NovaGlassSurfaceElevated = Color(0xF2121212)
+val NovaGlassSurfaceRecessed = Color(0x940D0D0D)
+val NovaDockSurface = Color(0xE6101010)
+val NovaBorderSubtle = Color(0xFF262626)
 
-// Light Liquid Glass Palette
-val NovaLightBackground = Color(0xFFEEF2F8)
-val NovaLightSurface = Color(0x9EFFFFFF)
-val NovaLightSurfaceElevated = Color(0xFAFFFFFF)
-val NovaLightSurfaceRecessed = Color(0x5CE3E8F2)
-val NovaLightDock = Color(0xADFFFFFF)
-val NovaLightBorder = Color(0xD6FFFFFF)
+// Legacy aliases mapped cleanly onto the unified Red & Black system
+val NovaAmoledSurface = NovaGlassSurface
+val NovaAmoledSurfaceElevated = NovaGlassSurfaceElevated
+val NovaAmoledSurfaceRecessed = NovaGlassSurfaceRecessed
+val NovaAmoledDock = NovaDockSurface
+val NovaAmoledBorder = NovaBorderSubtle
 
-// Optical Specular, Reflection & Pink/Purple Glow Tokens
-val NovaGlassHighlightDark = Color(0x4FFCE7F3)
-val NovaGlassBorderBottomDark = Color(0x24C084FC)
-val NovaGlassHighlightLight = Color(0xE6FFFFFF)
-val NovaGlassBorderBottomLight = Color(0x1F0F172A)
+val NovaDarkBackground = NovaBackgroundPrimary
+val NovaDarkSurface = Color(0xCC181818)
+val NovaDarkSurfaceElevated = Color(0xF5141414)
+val NovaDarkSurfaceRecessed = Color(0x99101010)
+val NovaDarkDock = NovaDockSurface
+val NovaDarkBorder = NovaBorderSubtle
 
-// Brand Pink & Purple Ambient Palette
-val NovaPink = Color(0xFFFF4DA6)
-val NovaPinkGlow = Color(0xFFFF85C8)
-val NovaPurple = Color(0xFF9D4EDD)
-val NovaPurpleGlow = Color(0xFFC084FC)
-val NovaPurpleDeep = Color(0xFF1A0B2E)
+// Optical Specular & Crimson Rim Highlights (no purple/blue/pink)
+val NovaGlassHighlightDark = Color(0x36FFFFFF)
+val NovaGlassBorderBottomDark = Color(0xFF262626)
 
-// Legacy Accent Tokens
-val NovaOrange = Color(0xFFFF8A32)
-val NovaOrangeGlow = Color(0xFFFFB270)
-val NovaOrangeDeep = Color(0xFFD96414)
+// Unified Vibrant Crimson & Deep Red Accents
+val NovaRedPrimary = Color(0xFFFF1744)
+val NovaRedSecondary = Color(0xFFD50032)
+val NovaRedGlow = Color(0xFFFF4569)
+val NovaRedMist = Color(0xFF8E001A)
+val NovaCrimsonTint = Color(0xFF1A0308)
 
-val NovaTextPrimaryDark = Color(0xFFFAFAFC)
-val NovaTextSecondaryDark = Color(0xCCD3C8E6)
-val NovaTextPrimaryLight = Color(0xFF0E121B)
-val NovaTextSecondaryLight = Color(0xFF525A6B)
+// Typography Inks (Pure White & Soft Neutral Gray)
+val NovaTextPrimaryDark = Color(0xFFFFFFFF)
+val NovaTextSecondaryDark = Color(0xFFA0A0A0)
 
-val NovaError = Color(0xFFFF5252)
-val NovaSuccess = Color(0xFF2CE59B)
-val NovaGold = Color(0xFFFFC857)
+// Semantic Red Feedback (strictly within Red & Black palette)
+val NovaError = Color(0xFFFF1744)
