@@ -55,20 +55,24 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Search
@@ -83,6 +87,7 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -119,6 +124,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -129,12 +136,13 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.novamusic.player.data.model.AudioOutputDevice
 import com.novamusic.player.data.model.NavBarAppearance
+import com.novamusic.player.data.model.PlaybackMode
 import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.PlayerUiState
-import com.novamusic.player.data.model.RepeatModeOption
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.LocalNovaColors
 import com.novamusic.player.utils.FormatUtils
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 val LocalReducedMotion = compositionLocalOf { false }
@@ -1923,18 +1931,234 @@ fun LiquidGlassSheet(
 }
 
 /**
+ * Unified Optical Liquid Glass Playback Mode Button cycling:
+ * Sequential -> Shuffle -> Repeat All -> Repeat One -> Smart Shuffle -> Sequential.
+ */
+@Composable
+fun LiquidGlassPlaybackModeButton(
+    playbackMode: PlaybackMode,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 44.dp
+) {
+    val novaColors = LocalNovaColors.current
+    val accent = MaterialTheme.colorScheme.primary
+    val isLight = novaColors.isLight
+    val reducedMotion = LocalReducedMotion.current
+    val performHaptic = rememberNovaHaptic()
+    val isActive = playbackMode.isActiveMode
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.88f else 1f,
+        animationSpec = if (reducedMotion) snap() else spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "lg_mode_scale"
+    )
+    val activeFraction by animateFloatAsState(
+        targetValue = if (isActive) 1f else 0f,
+        animationSpec = if (reducedMotion) snap() else tween(220, easing = FastOutSlowInEasing),
+        label = "lg_mode_active"
+    )
+    val resolvedTint by animateColorAsState(
+        targetValue = when {
+            playbackMode == PlaybackMode.SMART_SHUFFLE -> lerp(accent, Color.White, 0.18f)
+            isActive -> accent
+            else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f)
+        },
+        animationSpec = if (reducedMotion) snap() else tween(200),
+        label = "lg_mode_tint"
+    )
+
+    var showModeLabel by remember { mutableStateOf(false) }
+    var lastObservedMode by remember { mutableStateOf(playbackMode) }
+    LaunchedEffect(playbackMode) {
+        if (lastObservedMode != playbackMode) {
+            lastObservedMode = playbackMode
+            showModeLabel = true
+            delay(1450L)
+            showModeLabel = false
+        }
+    }
+
+    val bgBrush = Brush.verticalGradient(
+        colors = listOf(
+            lerp(
+                Color.White.copy(alpha = if (isLight) 0.90f else 0.16f),
+                accent.copy(alpha = if (playbackMode == PlaybackMode.SMART_SHUFFLE) 0.42f else 0.34f),
+                activeFraction
+            ),
+            lerp(
+                novaColors.glassSurface.copy(alpha = if (isLight) 0.66f else 0.24f),
+                accent.copy(alpha = 0.16f),
+                activeFraction
+            )
+        )
+    )
+
+    val borderBrush = Brush.linearGradient(
+        colors = listOf(
+            lerp(novaColors.glassBorderTop, accent.copy(alpha = 0.82f), activeFraction),
+            lerp(novaColors.glassBorderBottom, accent.copy(alpha = 0.24f), activeFraction)
+        )
+    )
+
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .shadow(
+                    elevation = if (isActive) 12.dp else 6.dp,
+                    shape = CircleShape,
+                    ambientColor = if (isActive) accent.copy(alpha = 0.58f) else novaColors.glassShadow,
+                    spotColor = if (isActive) accent.copy(alpha = 0.58f) else novaColors.glassShadow
+                )
+                .clip(CircleShape)
+                .background(bgBrush)
+                .border(0.75.dp, borderBrush, CircleShape)
+                .semantics {
+                    stateDescription = playbackMode.label
+                }
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = {
+                        performHaptic()
+                        onClick()
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            AnimatedContent(
+                targetState = playbackMode,
+                transitionSpec = {
+                    if (reducedMotion) {
+                        fadeIn(tween(80)) togetherWith fadeOut(tween(80))
+                    } else {
+                        (fadeIn(tween(180)) + scaleIn(initialScale = 0.72f, animationSpec = tween(180))) togetherWith
+                            (fadeOut(tween(120)) + scaleOut(targetScale = 0.72f, animationSpec = tween(120)))
+                    }
+                },
+                label = "lg_playback_mode_icon"
+            ) { mode ->
+                when (mode) {
+                    PlaybackMode.SEQUENTIAL -> Icon(
+                        imageVector = Icons.Rounded.PlaylistPlay,
+                        contentDescription = "Playback mode: Sequential",
+                        tint = resolvedTint,
+                        modifier = Modifier.size(22.dp)
+                    )
+
+                    PlaybackMode.SHUFFLE -> Icon(
+                        imageVector = Icons.Rounded.Shuffle,
+                        contentDescription = "Playback mode: Shuffle",
+                        tint = resolvedTint,
+                        modifier = Modifier.size(20.dp)
+                    )
+
+                    PlaybackMode.REPEAT_ALL -> Icon(
+                        imageVector = Icons.Rounded.Repeat,
+                        contentDescription = "Playback mode: Repeat All",
+                        tint = resolvedTint,
+                        modifier = Modifier.size(20.dp)
+                    )
+
+                    PlaybackMode.REPEAT_ONE -> Icon(
+                        imageVector = Icons.Rounded.RepeatOne,
+                        contentDescription = "Playback mode: Repeat One",
+                        tint = resolvedTint,
+                        modifier = Modifier.size(20.dp)
+                    )
+
+                    PlaybackMode.SMART_SHUFFLE -> Box(
+                        modifier = Modifier.size(26.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Shuffle,
+                            contentDescription = "Playback mode: Smart Shuffle",
+                            tint = resolvedTint,
+                            modifier = Modifier
+                                .size(19.dp)
+                                .offset(x = (-1).dp, y = 1.dp)
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = null,
+                            tint = lerp(accent, Color.White, 0.42f),
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(11.dp)
+                        )
+                    }
+                }
+            }
+
+            if (activeFraction > 0.05f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 4.dp)
+                        .size(4.dp)
+                        .graphicsLayer {
+                            scaleX = activeFraction
+                            scaleY = activeFraction
+                            alpha = activeFraction
+                        }
+                        .clip(CircleShape)
+                        .background(accent)
+                )
+            }
+        }
+
+        // Transient floating Liquid Glass mode badge when cycling modes (non-displacing overlay)
+        AnimatedVisibility(
+            visible = showModeLabel,
+            enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.88f, animationSpec = tween(150)),
+            exit = fadeOut(tween(220)) + scaleOut(targetScale = 0.92f, animationSpec = tween(220)),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(y = (-34).dp)
+                .wrapContentSize(align = Alignment.BottomStart, unbounded = true)
+        ) {
+            LiquidGlassSurface(
+                shape = RoundedCornerShape(12.dp),
+                highlighted = playbackMode.isActiveMode,
+                elevation = 8.dp,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = playbackMode.label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (playbackMode.isActiveMode) accent else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+/**
  * Floating Optical Liquid Glass Transport Controls for NowPlayingScreen.
  */
 @Composable
 fun LiquidGlassPlayerControls(
     isPlaying: Boolean,
-    shuffleEnabled: Boolean,
-    repeatMode: RepeatModeOption,
-    onToggleShuffle: () -> Unit,
+    playbackMode: PlaybackMode,
+    onCyclePlaybackMode: () -> Unit,
     onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onNext: () -> Unit,
-    onCycleRepeat: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalArtworkPalette.current
@@ -1954,106 +2178,102 @@ fun LiquidGlassPlayerControls(
 
     Row(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        LiquidGlassIconButton(
-            icon = Icons.Rounded.Shuffle,
-            contentDescription = "Shuffle",
-            active = shuffleEnabled,
-            showDotWhenActive = true,
-            size = 42.dp,
-            iconSize = 20.dp,
-            onClick = onToggleShuffle
-        )
-
-        LiquidGlassIconButton(
-            icon = Icons.Rounded.SkipPrevious,
-            contentDescription = "Previous",
-            size = 56.dp,
-            iconSize = 32.dp,
-            onClick = onPrevious
-        )
-
-        // Large Floating Optical Liquid Glass Play/Pause Lens
         Box(
-            modifier = Modifier
-                .size(80.dp)
-                .scale(playScale)
-                .shadow(
-                    elevation = 24.dp,
-                    shape = CircleShape,
-                    ambientColor = palette.glow.copy(alpha = 0.65f),
-                    spotColor = accent.copy(alpha = 0.72f)
-                )
-                .clip(CircleShape)
-                .background(
-                    Brush.verticalGradient(
-                        colors = if (novaColors.isLight) {
-                            listOf(
-                                Color.White.copy(alpha = 0.96f),
-                                lerp(Color.White, palette.primary, 0.16f).copy(alpha = 0.88f)
-                            )
-                        } else {
-                            listOf(
-                                Color.White.copy(alpha = 0.28f),
-                                lerp(Color.White, palette.primary, 0.35f).copy(alpha = 0.16f),
-                                Color.White.copy(alpha = 0.10f)
-                            )
-                        }
-                    )
-                )
-                .border(
-                    width = 1.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (novaColors.isLight) 1f else 0.68f),
-                            Color.White.copy(alpha = 0.14f)
-                        )
-                    ),
-                    shape = CircleShape
-                )
-                .clickable(
-                    interactionSource = playInteraction,
-                    indication = null,
-                    onClick = onTogglePlayPause
-                ),
-            contentAlignment = Alignment.Center
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart
         ) {
-            AnimatedContent(
-                targetState = isPlaying,
-                transitionSpec = {
-                    (fadeIn(tween(160)) + scaleIn(initialScale = 0.72f, animationSpec = tween(160))) togetherWith
-                        (fadeOut(tween(120)) + scaleOut(targetScale = 0.72f, animationSpec = tween(120)))
-                },
-                label = "lg_play_pause_morph"
-            ) { playing ->
-                Icon(
-                    imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = if (playing) "Pause" else "Play",
-                    tint = if (novaColors.isLight) MaterialTheme.colorScheme.onBackground else Color.White,
-                    modifier = Modifier.size(42.dp)
-                )
-            }
+            LiquidGlassPlaybackModeButton(
+                playbackMode = playbackMode,
+                onClick = onCyclePlaybackMode
+            )
         }
 
-        LiquidGlassIconButton(
-            icon = Icons.Rounded.SkipNext,
-            contentDescription = "Next",
-            size = 56.dp,
-            iconSize = 32.dp,
-            onClick = onNext
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            LiquidGlassIconButton(
+                icon = Icons.Rounded.SkipPrevious,
+                contentDescription = "Previous",
+                size = 56.dp,
+                iconSize = 32.dp,
+                onClick = onPrevious
+            )
 
-        LiquidGlassIconButton(
-            icon = if (repeatMode == RepeatModeOption.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-            contentDescription = "Repeat Mode",
-            active = repeatMode != RepeatModeOption.OFF,
-            showDotWhenActive = true,
-            size = 42.dp,
-            iconSize = 20.dp,
-            onClick = onCycleRepeat
-        )
+            // Large Floating Optical Liquid Glass Play/Pause Lens
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .scale(playScale)
+                    .shadow(
+                        elevation = 24.dp,
+                        shape = CircleShape,
+                        ambientColor = palette.glow.copy(alpha = 0.65f),
+                        spotColor = accent.copy(alpha = 0.72f)
+                    )
+                    .clip(CircleShape)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = if (novaColors.isLight) {
+                                listOf(
+                                    Color.White.copy(alpha = 0.96f),
+                                    lerp(Color.White, palette.primary, 0.16f).copy(alpha = 0.88f)
+                                )
+                            } else {
+                                listOf(
+                                    Color.White.copy(alpha = 0.28f),
+                                    lerp(Color.White, palette.primary, 0.35f).copy(alpha = 0.16f),
+                                    Color.White.copy(alpha = 0.10f)
+                                )
+                            }
+                        )
+                    )
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = if (novaColors.isLight) 1f else 0.68f),
+                                Color.White.copy(alpha = 0.14f)
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+                    .clickable(
+                        interactionSource = playInteraction,
+                        indication = null,
+                        onClick = onTogglePlayPause
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                AnimatedContent(
+                    targetState = isPlaying,
+                    transitionSpec = {
+                        (fadeIn(tween(160)) + scaleIn(initialScale = 0.72f, animationSpec = tween(160))) togetherWith
+                            (fadeOut(tween(120)) + scaleOut(targetScale = 0.72f, animationSpec = tween(120)))
+                    },
+                    label = "lg_play_pause_morph"
+                ) { playing ->
+                    Icon(
+                        imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (playing) "Pause" else "Play",
+                        tint = if (novaColors.isLight) MaterialTheme.colorScheme.onBackground else Color.White,
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
+            }
+
+            LiquidGlassIconButton(
+                icon = Icons.Rounded.SkipNext,
+                contentDescription = "Next",
+                size = 56.dp,
+                iconSize = 32.dp,
+                onClick = onNext
+            )
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
     }
 }
 

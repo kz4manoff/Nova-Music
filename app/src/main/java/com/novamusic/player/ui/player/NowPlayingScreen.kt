@@ -394,11 +394,10 @@ fun NowPlayingScreen(
                             isEqEnabled = isEqEnabled,
                             onToggleFavorite = { viewModel.toggleFavorite(song.id) },
                             onSeek = viewModel::seekTo,
-                            onToggleShuffle = viewModel::toggleShuffle,
+                            onCyclePlaybackMode = viewModel::cyclePlaybackMode,
                             onPrevious = triggerPreviousTrack,
                             onTogglePlayPause = viewModel::togglePlayPause,
                             onNext = triggerNextTrack,
-                            onCycleRepeat = viewModel::cycleRepeatMode,
                             onOpenQueue = { showQueueSheet = true },
                             onOpenLyrics = { onOpenLyrics(song) },
                             onOpenEqualizer = onOpenEqualizer,
@@ -445,11 +444,10 @@ fun NowPlayingScreen(
                         isEqEnabled = isEqEnabled,
                         onToggleFavorite = { viewModel.toggleFavorite(song.id) },
                         onSeek = viewModel::seekTo,
-                        onToggleShuffle = viewModel::toggleShuffle,
+                        onCyclePlaybackMode = viewModel::cyclePlaybackMode,
                         onPrevious = triggerPreviousTrack,
                         onTogglePlayPause = viewModel::togglePlayPause,
                         onNext = triggerNextTrack,
-                        onCycleRepeat = viewModel::cycleRepeatMode,
                         onOpenQueue = { showQueueSheet = true },
                         onOpenLyrics = { onOpenLyrics(song) },
                         onOpenEqualizer = onOpenEqualizer,
@@ -891,11 +889,10 @@ private fun AppleMusicPlayerControlsBlock(
     isEqEnabled: Boolean,
     onToggleFavorite: () -> Unit,
     onSeek: (Long) -> Unit,
-    onToggleShuffle: () -> Unit,
+    onCyclePlaybackMode: () -> Unit,
     onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onNext: () -> Unit,
-    onCycleRepeat: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenLyrics: () -> Unit,
     onOpenEqualizer: () -> Unit,
@@ -1092,13 +1089,11 @@ private fun AppleMusicPlayerControlsBlock(
         // Floating Optical Liquid Glass Transport Controls
         LiquidGlassPlayerControls(
             isPlaying = playerState.isPlaying,
-            shuffleEnabled = playerState.shuffleEnabled,
-            repeatMode = playerState.repeatMode,
-            onToggleShuffle = onToggleShuffle,
+            playbackMode = playerState.playbackMode,
+            onCyclePlaybackMode = onCyclePlaybackMode,
             onPrevious = onPrevious,
             onTogglePlayPause = onTogglePlayPause,
-            onNext = onNext,
-            onCycleRepeat = onCycleRepeat
+            onNext = onNext
         )
 
         Spacer(modifier = Modifier.height(22.dp))

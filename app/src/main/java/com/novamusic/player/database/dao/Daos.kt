@@ -40,6 +40,9 @@ interface HistoryDao {
     @Query("SELECT * FROM playback_history WHERE songId = :songId LIMIT 1")
     suspend fun getHistoryForSong(songId: Long): PlaybackHistoryEntity?
 
+    @Query("SELECT * FROM playback_history")
+    suspend fun getAllHistory(): List<PlaybackHistoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertHistory(entity: PlaybackHistoryEntity)
 

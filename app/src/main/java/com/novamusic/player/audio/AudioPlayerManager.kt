@@ -2,23 +2,27 @@ package com.novamusic.player.audio
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
+import androidx.core.os.bundleOf
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.novamusic.player.data.model.PlaybackMode
 import com.novamusic.player.data.model.PlayerUiState
-import com.novamusic.player.data.model.RepeatModeOption
 import com.novamusic.player.data.model.SleepTimerState
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.data.preferences.AppSettings
 import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.service.MusicService
+import com.novamusic.player.service.PlaybackSessionContract
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,6 +34,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 class AudioPlayerManager(
     private val context: Context,
@@ -41,7 +47,8 @@ class AudioPlayerManager(
     private val _playerState = MutableStateFlow(PlayerUiState())
     val playerState: StateFlow<PlayerUiState> = _playerState.asStateFlow()
 
-    private val songRegistry = mutableMapOf<String, Song>()
+    private val songRegistry = ConcurrentHashMap<String, Song>()
+    private val recentSessionSongIds = ArrayDeque<Long>()
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
     private var positionJob: Job? = null
@@ -108,6 +115,12 @@ class AudioPlayerManager(
         }
     }
 
+    private val controllerListener = object : MediaController.Listener {
+        override fun onExtrasChanged(controller: MediaController, extras: Bundle) {
+            syncPlaybackModeFromExtras(extras)
+        }
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             syncStateFromController()
@@ -134,10 +147,13 @@ class AudioPlayerManager(
             }
             syncStateFromController()
             val songId = mediaItem?.mediaId?.toLongOrNull() ?: -1L
-            if (songId > 0L && songId != lastRecordedSongId) {
-                lastRecordedSongId = songId
-                scope.launch {
-                    repository.recordSongPlayed(songId)
+            if (songId > 0L) {
+                recordRecentSessionSong(songId)
+                if (songId != lastRecordedSongId) {
+                    lastRecordedSongId = songId
+                    scope.launch {
+                        repository.recordSongPlayed(songId)
+                    }
                 }
             }
             persistPlaybackSnapshot()
@@ -151,14 +167,39 @@ class AudioPlayerManager(
                 mediaController?.repeatMode == Player.REPEAT_MODE_OFF
             ) {
                 val all = repository.allSongs.value
-                val currentId = _playerState.value.currentSong?.id
-                val candidates = all.filter { it.id != currentId }
-                val nextUp = candidates.randomOrNull()
-                if (nextUp != null) {
-                    addToQueue(nextUp)
-                    mediaController?.seekToNextMediaItem()
-                    mediaController?.prepare()
-                    mediaController?.play()
+                val currentSong = _playerState.value.currentSong
+                val mode = _playerState.value.playbackMode
+                if (mode == PlaybackMode.SMART_SHUFFLE && all.isNotEmpty()) {
+                    scope.launch {
+                        val (historyMap, favoriteIds) = withContext(Dispatchers.IO) {
+                            val h = runCatching { repository.getPlaybackHistoryMap() }.getOrDefault(emptyMap())
+                            val f = runCatching { repository.getFavoriteSongIdSet() }.getOrDefault(emptySet())
+                            h to f
+                        }
+                        val nextUp = SmartShuffleEngine.pickNextAutoplayTrack(
+                            currentSong = currentSong,
+                            librarySongs = all,
+                            historyMap = historyMap,
+                            favoriteIds = favoriteIds,
+                            recentSessionSongIds = recentSessionSongIds.toList()
+                        )
+                        if (nextUp != null) {
+                            addToQueue(nextUp)
+                            mediaController?.seekToNextMediaItem()
+                            mediaController?.prepare()
+                            mediaController?.play()
+                        }
+                    }
+                } else {
+                    val currentId = currentSong?.id
+                    val candidates = all.filter { it.id != currentId }
+                    val nextUp = candidates.randomOrNull()
+                    if (nextUp != null) {
+                        addToQueue(nextUp)
+                        mediaController?.seekToNextMediaItem()
+                        mediaController?.prepare()
+                        mediaController?.play()
+                    }
                 }
             }
             syncStateFromController()
@@ -199,13 +240,16 @@ class AudioPlayerManager(
     fun connect() {
         if (controllerFuture != null) return
         val sessionToken = SessionToken(context, ComponentName(context, MusicService::class.java))
-        val future = MediaController.Builder(context, sessionToken).buildAsync()
+        val future = MediaController.Builder(context, sessionToken)
+            .setListener(controllerListener)
+            .buildAsync()
         controllerFuture = future
         future.addListener({
             try {
                 val controller = future.get()
                 mediaController = controller
                 controller.addListener(playerListener)
+                syncPlaybackModeFromExtras(controller.sessionExtras)
                 syncStateFromController()
                 if (controller.isPlaying) {
                     startPositionTicker()
@@ -231,6 +275,8 @@ class AudioPlayerManager(
         songs.forEach { songRegistry[it.id.toString()] = it }
         syncStateFromController()
     }
+
+    fun findSong(mediaId: String): Song? = songRegistry[mediaId]
 
     suspend fun restoreLastSessionIfNeeded(allSongs: List<Song>) {
         registerSongs(allSongs)
@@ -265,8 +311,11 @@ class AudioPlayerManager(
         val startIndex = queueSongs.indexOfFirst { it.id == saved.lastSongId }.coerceAtLeast(0)
         val items = queueSongs.map { it.toMediaItem(settings.showNotificationArtwork) }
         controller.setMediaItems(items, startIndex, saved.lastPositionMs.coerceAtLeast(0L))
-        controller.shuffleModeEnabled = saved.shuffleEnabled
-        controller.repeatMode = saved.repeatMode.toMedia3RepeatMode()
+        setPlaybackMode(
+            mode = saved.playbackMode,
+            restoreOnly = true,
+            originalQueueIds = saved.originalQueueSongIds
+        )
         controller.volume = targetVolume()
         controller.prepare()
         controller.playWhenReady = false
@@ -286,15 +335,24 @@ class AudioPlayerManager(
             return
         }
 
+        val activeMode = _playerState.value.playbackMode
         val mediaItems = effectiveQueue.map { it.toMediaItem(currentSettings.showNotificationArtwork) }
         controller.setMediaItems(mediaItems, startIndex, 0L)
         controller.prepare()
         runFadeInIfNeeded()
         controller.play()
+        recordRecentSessionSong(song.id)
         lastRecordedSongId = song.id
         _playerState.value = _playerState.value.copy(playbackError = null)
         scope.launch {
             repository.recordSongPlayed(song.id)
+        }
+        if (activeMode == PlaybackMode.SMART_SHUFFLE && effectiveQueue.size > 1) {
+            setPlaybackMode(
+                mode = PlaybackMode.SMART_SHUFFLE,
+                restoreOnly = false,
+                originalQueueIds = effectiveQueue.map { it.id }
+            )
         }
         syncStateFromController()
         persistPlaybackSnapshot()
@@ -308,16 +366,30 @@ class AudioPlayerManager(
             connect()
             return
         }
-        controller.shuffleModeEnabled = shuffle
         val safeIndex = startIndex.coerceIn(0, songs.lastIndex)
         controller.setMediaItems(songs.map { it.toMediaItem(currentSettings.showNotificationArtwork) }, safeIndex, 0L)
         controller.prepare()
         runFadeInIfNeeded()
         controller.play()
         val firstSong = songs[safeIndex]
+        recordRecentSessionSong(firstSong.id)
         lastRecordedSongId = firstSong.id
         _playerState.value = _playerState.value.copy(playbackError = null)
         scope.launch { repository.recordSongPlayed(firstSong.id) }
+
+        if (shuffle) {
+            setPlaybackMode(
+                mode = PlaybackMode.SHUFFLE,
+                restoreOnly = true,
+                originalQueueIds = emptyList()
+            )
+        } else if (_playerState.value.playbackMode == PlaybackMode.SMART_SHUFFLE && songs.size > 1) {
+            setPlaybackMode(
+                mode = PlaybackMode.SMART_SHUFFLE,
+                restoreOnly = false,
+                originalQueueIds = songs.map { it.id }
+            )
+        }
         syncStateFromController()
         persistPlaybackSnapshot()
     }
@@ -381,20 +453,47 @@ class AudioPlayerManager(
         }
     }
 
-    fun toggleShuffle() {
-        val controller = mediaController ?: return
-        controller.shuffleModeEnabled = !controller.shuffleModeEnabled
-        syncStateFromController()
+    fun cyclePlaybackMode() {
+        val controller = mediaController
+        if (controller == null) {
+            pendingPlaybackAction = { cyclePlaybackMode() }
+            connect()
+            return
+        }
+        val nextOptimistic = _playerState.value.playbackMode.next()
+        _playerState.value = _playerState.value.copy(playbackMode = nextOptimistic)
+        controller.sendCustomCommand(
+            SessionCommand(PlaybackSessionContract.ACTION_CYCLE_PLAYBACK_MODE, Bundle.EMPTY),
+            Bundle.EMPTY
+        )
     }
 
-    fun cycleRepeatMode() {
-        val controller = mediaController ?: return
-        controller.repeatMode = when (controller.repeatMode) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
+    fun setPlaybackMode(
+        mode: PlaybackMode,
+        restoreOnly: Boolean = false,
+        originalQueueIds: List<Long>? = null
+    ) {
+        val controller = mediaController
+        if (controller == null) {
+            pendingPlaybackAction = { setPlaybackMode(mode, restoreOnly, originalQueueIds) }
+            connect()
+            return
         }
-        syncStateFromController()
+        _playerState.value = _playerState.value.copy(playbackMode = mode)
+        val args = bundleOf(
+            PlaybackSessionContract.EXTRA_PLAYBACK_MODE to mode.name,
+            PlaybackSessionContract.EXTRA_RESTORE_ONLY to restoreOnly
+        )
+        if (originalQueueIds != null) {
+            args.putLongArray(
+                PlaybackSessionContract.EXTRA_ORIGINAL_QUEUE_IDS,
+                originalQueueIds.toLongArray()
+            )
+        }
+        controller.sendCustomCommand(
+            SessionCommand(PlaybackSessionContract.ACTION_SET_PLAYBACK_MODE, Bundle.EMPTY),
+            args
+        )
     }
 
     fun playNext(song: Song) {
@@ -529,6 +628,14 @@ class AudioPlayerManager(
         positionJob = null
     }
 
+    private fun syncPlaybackModeFromExtras(extras: Bundle) {
+        val raw = extras.getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE) ?: return
+        val parsed = runCatching { PlaybackMode.valueOf(raw) }.getOrNull() ?: return
+        if (_playerState.value.playbackMode != parsed) {
+            _playerState.value = _playerState.value.copy(playbackMode = parsed)
+        }
+    }
+
     private fun syncStateFromController() {
         val controller = mediaController ?: return
         val count = controller.mediaItemCount
@@ -544,6 +651,11 @@ class AudioPlayerManager(
             ?: currentSong?.durationMs
             ?: 0L
 
+        val sessionMode = controller.sessionExtras
+            .getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE)
+            ?.let { runCatching { PlaybackMode.valueOf(it) }.getOrNull() }
+            ?: _playerState.value.playbackMode
+
         _playerState.value = _playerState.value.copy(
             currentSong = currentSong,
             queue = queue,
@@ -551,9 +663,16 @@ class AudioPlayerManager(
             isPlaying = controller.isPlaying,
             positionMs = controller.currentPosition.coerceAtLeast(0L),
             durationMs = duration,
-            shuffleEnabled = controller.shuffleModeEnabled,
-            repeatMode = controller.repeatMode.toRepeatModeOption()
+            playbackMode = sessionMode
         )
+    }
+
+    private fun recordRecentSessionSong(songId: Long) {
+        if (songId <= 0L || recentSessionSongIds.lastOrNull() == songId) return
+        recentSessionSongIds.addLast(songId)
+        while (recentSessionSongIds.size > 25) {
+            recentSessionSongIds.removeFirst()
+        }
     }
 
     private fun persistPlaybackSnapshot() {
@@ -563,16 +682,15 @@ class AudioPlayerManager(
         val queueIds = (0 until controller.mediaItemCount).mapNotNull {
             controller.getMediaItemAt(it).mediaId.toLongOrNull()
         }
-        val shuffle = controller.shuffleModeEnabled
-        val repeat = controller.repeatMode.toRepeatModeOption()
+        val mode = _playerState.value.playbackMode
 
         scope.launch {
             preferences.savePlaybackState(
                 songId = currentSongId,
                 positionMs = pos,
                 queueIds = queueIds,
-                shuffleEnabled = shuffle,
-                repeatMode = repeat
+                playbackMode = mode,
+                originalQueueIds = null
             )
         }
     }
@@ -583,6 +701,7 @@ class AudioPlayerManager(
             .setArtist(artist)
             .setAlbumTitle(album)
             .setAlbumArtist(artist)
+            .setGenre(genre)
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
@@ -594,17 +713,5 @@ class AudioPlayerManager(
             .setUri(uri)
             .setMediaMetadata(metaBuilder.build())
             .build()
-    }
-
-    private fun Int.toRepeatModeOption(): RepeatModeOption = when (this) {
-        Player.REPEAT_MODE_ALL -> RepeatModeOption.ALL
-        Player.REPEAT_MODE_ONE -> RepeatModeOption.ONE
-        else -> RepeatModeOption.OFF
-    }
-
-    private fun RepeatModeOption.toMedia3RepeatMode(): Int = when (this) {
-        RepeatModeOption.OFF -> Player.REPEAT_MODE_OFF
-        RepeatModeOption.ALL -> Player.REPEAT_MODE_ALL
-        RepeatModeOption.ONE -> Player.REPEAT_MODE_ONE
     }
 }

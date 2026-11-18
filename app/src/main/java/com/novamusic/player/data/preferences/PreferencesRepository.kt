@@ -17,6 +17,7 @@ import com.novamusic.player.data.model.AudioFocusBehavior
 import com.novamusic.player.data.model.AudioQualityMode
 import com.novamusic.player.data.model.NavBarAppearance
 import com.novamusic.player.data.model.NotificationAppearance
+import com.novamusic.player.data.model.PlaybackMode
 import com.novamusic.player.data.model.PlayerAnimationStyle
 import com.novamusic.player.data.model.RepeatModeOption
 import com.novamusic.player.data.model.RescanInterval
@@ -82,7 +83,9 @@ data class PlaybackPersistenceState(
     val lastPositionMs: Long = 0L,
     val queueSongIds: List<Long> = emptyList(),
     val shuffleEnabled: Boolean = false,
-    val repeatMode: RepeatModeOption = RepeatModeOption.OFF
+    val repeatMode: RepeatModeOption = RepeatModeOption.OFF,
+    val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
+    val originalQueueSongIds: List<Long> = emptyList()
 )
 
 data class EqualizerPersistenceState(
@@ -138,6 +141,8 @@ class PreferencesRepository(private val context: Context) {
         val LAST_QUEUE_IDS = stringPreferencesKey("last_queue_ids")
         val SHUFFLE_ENABLED = booleanPreferencesKey("shuffle_enabled")
         val REPEAT_MODE = stringPreferencesKey("repeat_mode")
+        val PLAYBACK_MODE = stringPreferencesKey("playback_mode")
+        val SMART_ORIGINAL_QUEUE_IDS = stringPreferencesKey("smart_original_queue_ids")
 
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
         val EQ_PRESET = stringPreferencesKey("eq_preset")
@@ -241,16 +246,26 @@ class PreferencesRepository(private val context: Context) {
             .orEmpty()
             .split(",")
             .mapNotNull { it.trim().toLongOrNull() }
+        val originalQueueIds = prefs[Keys.SMART_ORIGINAL_QUEUE_IDS]
+            .orEmpty()
+            .split(",")
+            .mapNotNull { it.trim().toLongOrNull() }
+        val shuffleEnabled = prefs[Keys.SHUFFLE_ENABLED] ?: false
         val repeat = prefs[Keys.REPEAT_MODE]?.let {
             runCatching { RepeatModeOption.valueOf(it) }.getOrNull()
         } ?: RepeatModeOption.OFF
+        val playbackMode = prefs[Keys.PLAYBACK_MODE]?.let {
+            runCatching { PlaybackMode.valueOf(it) }.getOrNull()
+        } ?: PlaybackMode.fromLegacy(shuffleEnabled = shuffleEnabled, repeatMode = repeat)
 
         return PlaybackPersistenceState(
             lastSongId = prefs[Keys.LAST_SONG_ID] ?: -1L,
             lastPositionMs = prefs[Keys.LAST_POSITION_MS] ?: 0L,
             queueSongIds = queueIds,
-            shuffleEnabled = prefs[Keys.SHUFFLE_ENABLED] ?: false,
-            repeatMode = repeat
+            shuffleEnabled = shuffleEnabled,
+            repeatMode = repeat,
+            playbackMode = playbackMode,
+            originalQueueSongIds = originalQueueIds
         )
     }
 
@@ -387,15 +402,53 @@ class PreferencesRepository(private val context: Context) {
         songId: Long,
         positionMs: Long,
         queueIds: List<Long>,
-        shuffleEnabled: Boolean,
-        repeatMode: RepeatModeOption
+        playbackMode: PlaybackMode,
+        originalQueueIds: List<Long>? = null
     ) {
+        val shuffleEnabled = playbackMode == PlaybackMode.SHUFFLE || playbackMode == PlaybackMode.SMART_SHUFFLE
+        val repeatMode = when (playbackMode) {
+            PlaybackMode.REPEAT_ALL -> RepeatModeOption.ALL
+            PlaybackMode.REPEAT_ONE -> RepeatModeOption.ONE
+            else -> RepeatModeOption.OFF
+        }
         context.dataStore.edit {
             it[Keys.LAST_SONG_ID] = songId
             it[Keys.LAST_POSITION_MS] = positionMs
             it[Keys.LAST_QUEUE_IDS] = queueIds.joinToString(",")
             it[Keys.SHUFFLE_ENABLED] = shuffleEnabled
             it[Keys.REPEAT_MODE] = repeatMode.name
+            it[Keys.PLAYBACK_MODE] = playbackMode.name
+            if (originalQueueIds != null) {
+                if (originalQueueIds.isEmpty()) {
+                    it.remove(Keys.SMART_ORIGINAL_QUEUE_IDS)
+                } else {
+                    it[Keys.SMART_ORIGINAL_QUEUE_IDS] = originalQueueIds.joinToString(",")
+                }
+            }
+        }
+    }
+
+    suspend fun savePlaybackMode(
+        playbackMode: PlaybackMode,
+        originalQueueIds: List<Long>? = null
+    ) {
+        val shuffleEnabled = playbackMode == PlaybackMode.SHUFFLE || playbackMode == PlaybackMode.SMART_SHUFFLE
+        val repeatMode = when (playbackMode) {
+            PlaybackMode.REPEAT_ALL -> RepeatModeOption.ALL
+            PlaybackMode.REPEAT_ONE -> RepeatModeOption.ONE
+            else -> RepeatModeOption.OFF
+        }
+        context.dataStore.edit {
+            it[Keys.PLAYBACK_MODE] = playbackMode.name
+            it[Keys.SHUFFLE_ENABLED] = shuffleEnabled
+            it[Keys.REPEAT_MODE] = repeatMode.name
+            if (originalQueueIds != null) {
+                if (originalQueueIds.isEmpty()) {
+                    it.remove(Keys.SMART_ORIGINAL_QUEUE_IDS)
+                } else {
+                    it[Keys.SMART_ORIGINAL_QUEUE_IDS] = originalQueueIds.joinToString(",")
+                }
+            }
         }
     }
 

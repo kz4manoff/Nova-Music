@@ -182,6 +182,36 @@ enum class RepeatModeOption {
     ONE
 }
 
+enum class PlaybackMode(
+    val label: String,
+    val shortLabel: String
+) {
+    SEQUENTIAL("Sequential", "Order"),
+    SHUFFLE("Shuffle", "Shuffle"),
+    REPEAT_ALL("Repeat All", "Repeat All"),
+    REPEAT_ONE("Repeat One", "Repeat 1"),
+    SMART_SHUFFLE("Smart Shuffle", "Smart");
+
+    fun next(): PlaybackMode = when (this) {
+        SEQUENTIAL -> SHUFFLE
+        SHUFFLE -> REPEAT_ALL
+        REPEAT_ALL -> REPEAT_ONE
+        REPEAT_ONE -> SMART_SHUFFLE
+        SMART_SHUFFLE -> SEQUENTIAL
+    }
+
+    val isActiveMode: Boolean
+        get() = this != SEQUENTIAL
+
+    companion object {
+        fun fromLegacy(shuffleEnabled: Boolean, repeatMode: RepeatModeOption): PlaybackMode = when (repeatMode) {
+            RepeatModeOption.ONE -> REPEAT_ONE
+            RepeatModeOption.ALL -> REPEAT_ALL
+            RepeatModeOption.OFF -> if (shuffleEnabled) SHUFFLE else SEQUENTIAL
+        }
+    }
+}
+
 @Immutable
 data class EqualizerBandInfo(
     val index: Int,
@@ -226,8 +256,17 @@ data class PlayerUiState(
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
-    val shuffleEnabled: Boolean = false,
-    val repeatMode: RepeatModeOption = RepeatModeOption.OFF,
+    val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
     val sleepTimer: SleepTimerState = SleepTimerState(),
     val playbackError: String? = null
-)
+) {
+    val shuffleEnabled: Boolean
+        get() = playbackMode == PlaybackMode.SHUFFLE || playbackMode == PlaybackMode.SMART_SHUFFLE
+
+    val repeatMode: RepeatModeOption
+        get() = when (playbackMode) {
+            PlaybackMode.REPEAT_ALL -> RepeatModeOption.ALL
+            PlaybackMode.REPEAT_ONE -> RepeatModeOption.ONE
+            else -> RepeatModeOption.OFF
+        }
+}

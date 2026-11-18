@@ -249,6 +249,14 @@ class MusicRepository(
         }
     }
 
+    suspend fun getPlaybackHistoryMap(): Map<Long, com.novamusic.player.database.entities.PlaybackHistoryEntity> {
+        return historyDao.getAllHistory().associateBy { it.songId }
+    }
+
+    suspend fun getFavoriteSongIdSet(): Set<Long> {
+        return favoriteSongIds.first()
+    }
+
     suspend fun clearPlaybackHistory() {
         historyDao.clearHistory()
     }

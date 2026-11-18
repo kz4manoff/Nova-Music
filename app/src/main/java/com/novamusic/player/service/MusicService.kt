@@ -7,9 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
+import androidx.core.os.bundleOf
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -23,23 +25,32 @@ import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
+import com.novamusic.player.AppContainer
 import com.novamusic.player.MainActivity
 import com.novamusic.player.NovaMusicApplication
 import com.novamusic.player.R
+import com.novamusic.player.audio.SmartShuffleEngine
 import com.novamusic.player.data.model.AudioFocusBehavior
 import com.novamusic.player.data.model.AudioOutputType
 import com.novamusic.player.data.model.AudioQualityMode
 import com.novamusic.player.data.model.NotificationAppearance
+import com.novamusic.player.data.model.PlaybackMode
+import com.novamusic.player.data.model.Song
 import com.novamusic.player.data.preferences.AppSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(UnstableApi::class)
 class MusicService : MediaSessionService() {
@@ -47,8 +58,23 @@ class MusicService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSession? = null
     private lateinit var exoPlayer: ExoPlayer
+
     @Volatile
     private var currentSettings: AppSettings = AppSettings()
+
+    @Volatile
+    private var currentPlaybackMode: PlaybackMode = PlaybackMode.SEQUENTIAL
+
+    private var hasUserChangedMode = false
+    private var isApplyingModeTransition = false
+    private var modeTransitionJob: Job? = null
+    private var smartOriginalQueueIds: List<Long> = emptyList()
+    private val recentSessionSongIds = ArrayDeque<Long>()
+
+    private val cyclePlaybackModeCommand =
+        SessionCommand(PlaybackSessionContract.ACTION_CYCLE_PLAYBACK_MODE, Bundle.EMPTY)
+    private val setPlaybackModeCommand =
+        SessionCommand(PlaybackSessionContract.ACTION_SET_PLAYBACK_MODE, Bundle.EMPTY)
 
     private val audioBecomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -96,6 +122,49 @@ class MusicService : MediaSessionService() {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isPlaying) {
                     persistCurrentPosition(container)
+                }
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val songId = mediaItem?.mediaId?.toLongOrNull()
+                if (songId != null && songId > 0L) {
+                    recordRecentSessionSong(songId)
+                }
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                if (!isApplyingModeTransition) {
+                    val derived = deriveExternalPlaybackMode(
+                        shuffleEnabled = shuffleModeEnabled,
+                        repeatMode = exoPlayer.repeatMode
+                    )
+                    if (derived != currentPlaybackMode) {
+                        hasUserChangedMode = true
+                        currentPlaybackMode = derived
+                        if (derived != PlaybackMode.SMART_SHUFFLE) {
+                            smartOriginalQueueIds = emptyList()
+                        }
+                        publishPlaybackModeToSession(derived)
+                        persistModeOnly(container)
+                    }
+                }
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                if (!isApplyingModeTransition) {
+                    val derived = deriveExternalPlaybackMode(
+                        shuffleEnabled = exoPlayer.shuffleModeEnabled,
+                        repeatMode = repeatMode
+                    )
+                    if (derived != currentPlaybackMode) {
+                        hasUserChangedMode = true
+                        currentPlaybackMode = derived
+                        if (derived != PlaybackMode.SMART_SHUFFLE) {
+                            smartOriginalQueueIds = emptyList()
+                        }
+                        publishPlaybackModeToSession(derived)
+                        persistModeOnly(container)
+                    }
                 }
             }
         })
@@ -161,7 +230,52 @@ class MusicService : MediaSessionService() {
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo
             ): MediaSession.ConnectionResult {
-                return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+                val availableSessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
+                    .buildUpon()
+                    .add(cyclePlaybackModeCommand)
+                    .add(setPlaybackModeCommand)
+                    .build()
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(availableSessionCommands)
+                    .build()
+            }
+
+            override fun onCustomCommand(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                customCommand: SessionCommand,
+                args: Bundle
+            ): ListenableFuture<SessionResult> {
+                when (customCommand.customAction) {
+                    PlaybackSessionContract.ACTION_CYCLE_PLAYBACK_MODE -> {
+                        hasUserChangedMode = true
+                        applyPlaybackMode(
+                            container = container,
+                            targetMode = currentPlaybackMode.next(),
+                            restoreOnly = false
+                        )
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+
+                    PlaybackSessionContract.ACTION_SET_PLAYBACK_MODE -> {
+                        hasUserChangedMode = true
+                        val modeName = args.getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE)
+                        val targetMode = modeName?.let {
+                            runCatching { PlaybackMode.valueOf(it) }.getOrNull()
+                        } ?: currentPlaybackMode
+                        val restoreOnly = args.getBoolean(PlaybackSessionContract.EXTRA_RESTORE_ONLY, false)
+                        val overrideOriginals = args.getLongArray(PlaybackSessionContract.EXTRA_ORIGINAL_QUEUE_IDS)
+                            ?.toList()
+                        applyPlaybackMode(
+                            container = container,
+                            targetMode = targetMode,
+                            restoreOnly = restoreOnly,
+                            overrideOriginalQueueIds = overrideOriginals
+                        )
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+                }
+                return super.onCustomCommand(session, controller, customCommand, args)
             }
 
             override fun onPlaybackResumption(
@@ -205,6 +319,14 @@ class MusicService : MediaSessionService() {
                                 .setMediaMetadata(metaBuilder.build())
                                 .build()
                         }
+
+                        applyPlaybackMode(
+                            container = container,
+                            targetMode = saved.playbackMode,
+                            restoreOnly = true,
+                            overrideOriginalQueueIds = saved.originalQueueSongIds
+                        )
+
                         future.set(
                             MediaItemsWithStartPosition(
                                 mediaItems,
@@ -224,6 +346,20 @@ class MusicService : MediaSessionService() {
             .setSessionActivity(sessionActivityPendingIntent)
             .setCallback(sessionCallback)
             .build()
+
+        publishPlaybackModeToSession(currentPlaybackMode)
+
+        serviceScope.launch {
+            val saved = container.preferencesRepository.getPlaybackPersistenceState()
+            if (!hasUserChangedMode && exoPlayer.mediaItemCount == 0) {
+                applyPlaybackMode(
+                    container = container,
+                    targetMode = saved.playbackMode,
+                    restoreOnly = true,
+                    overrideOriginalQueueIds = saved.originalQueueSongIds
+                )
+            }
+        }
 
         val defaultProvider = DefaultMediaNotificationProvider.Builder(this)
             .build()
@@ -286,6 +422,7 @@ class MusicService : MediaSessionService() {
             runCatching { unregisterReceiver(audioBecomingNoisyReceiver) }
             noisyReceiverRegistered = false
         }
+        modeTransitionJob?.cancel()
         serviceScope.cancel()
         container.equalizerManager.releaseEffects()
         mediaSession?.run {
@@ -296,26 +433,288 @@ class MusicService : MediaSessionService() {
         super.onDestroy()
     }
 
-    private fun persistCurrentPosition(container: com.novamusic.player.AppContainer) {
+    private fun applyPlaybackMode(
+        container: AppContainer,
+        targetMode: PlaybackMode,
+        restoreOnly: Boolean,
+        overrideOriginalQueueIds: List<Long>? = null
+    ) {
+        if (!::exoPlayer.isInitialized) return
+        val previousMode = currentPlaybackMode
+        modeTransitionJob?.cancel()
+
+        if (overrideOriginalQueueIds != null) {
+            smartOriginalQueueIds = overrideOriginalQueueIds
+        }
+
+        if (restoreOnly) {
+            currentPlaybackMode = targetMode
+            applyExoPlayerFlags(targetMode)
+            if (targetMode != PlaybackMode.SMART_SHUFFLE) {
+                smartOriginalQueueIds = emptyList()
+            }
+            publishPlaybackModeToSession(targetMode)
+            persistModeOnly(container)
+            return
+        }
+
+        if (targetMode == PlaybackMode.SMART_SHUFFLE) {
+            // Update session indicator immediately so taps feel instantaneous.
+            currentPlaybackMode = PlaybackMode.SMART_SHUFFLE
+            applyExoPlayerFlags(PlaybackMode.SMART_SHUFFLE)
+            publishPlaybackModeToSession(PlaybackMode.SMART_SHUFFLE)
+
+            modeTransitionJob = serviceScope.launch {
+                val (historyMap, favoriteIds) = withContext(Dispatchers.IO) {
+                    val h = runCatching { container.musicRepository.getPlaybackHistoryMap() }.getOrDefault(emptyMap())
+                    val f = runCatching { container.musicRepository.getFavoriteSongIdSet() }.getOrDefault(emptySet())
+                    h to f
+                }
+
+                val itemCount = exoPlayer.mediaItemCount
+                if (itemCount > 1) {
+                    val itemsSnapshot = (0 until itemCount).map { exoPlayer.getMediaItemAt(it) }
+                    val songsSnapshot = itemsSnapshot.map { resolveSongForMediaItem(container, it) }
+                    val currentIdx = exoPlayer.currentMediaItemIndex.coerceIn(0, itemsSnapshot.lastIndex)
+
+                    if (smartOriginalQueueIds.isEmpty()) {
+                        smartOriginalQueueIds = songsSnapshot.map { it.id }
+                    }
+
+                    val orderedIndices = SmartShuffleEngine.buildSmartOrderIndices(
+                        currentIndex = currentIdx,
+                        queue = songsSnapshot,
+                        historyMap = historyMap,
+                        favoriteIds = favoriteIds,
+                        recentSessionSongIds = recentSessionSongIds.toList()
+                    )
+
+                    if (orderedIndices.size == itemsSnapshot.size) {
+                        reorderAroundAnchorZero(
+                            currentIdx = currentIdx,
+                            orderedIndices = orderedIndices,
+                            itemsSnapshot = itemsSnapshot
+                        )
+                    }
+                } else if (itemCount == 1 && smartOriginalQueueIds.isEmpty()) {
+                    exoPlayer.getMediaItemAt(0).mediaId.toLongOrNull()?.let { singleId ->
+                        smartOriginalQueueIds = listOf(singleId)
+                    }
+                }
+
+                persistCurrentPosition(container)
+            }
+            return
+        }
+
+        // Transitioning out of SMART_SHUFFLE (e.g., SMART_SHUFFLE -> SEQUENTIAL) or between standard modes.
+        if (previousMode == PlaybackMode.SMART_SHUFFLE && smartOriginalQueueIds.isNotEmpty() && exoPlayer.mediaItemCount > 1) {
+            val itemCount = exoPlayer.mediaItemCount
+            val itemsSnapshot = (0 until itemCount).map { exoPlayer.getMediaItemAt(it) }
+            val currentIds = itemsSnapshot.map { it.mediaId.toLongOrNull() ?: -1L }
+            val currentIdx = exoPlayer.currentMediaItemIndex.coerceIn(0, itemsSnapshot.lastIndex)
+            val (restoredIndices, newAnchorPos) = SmartShuffleEngine.restoreSequentialOrderIndices(
+                currentIndex = currentIdx,
+                currentQueueIds = currentIds,
+                originalOrderIds = smartOriginalQueueIds
+            )
+            if (restoredIndices.size == itemsSnapshot.size) {
+                restoreOrderKeepingAnchorUninterrupted(
+                    currentIdx = currentIdx,
+                    restoredIndices = restoredIndices,
+                    newAnchorPos = newAnchorPos,
+                    itemsSnapshot = itemsSnapshot
+                )
+            }
+        }
+
+        smartOriginalQueueIds = emptyList()
+        currentPlaybackMode = targetMode
+        applyExoPlayerFlags(targetMode)
+        publishPlaybackModeToSession(targetMode)
+        persistCurrentPosition(container)
+    }
+
+    /**
+     * Reorders [exoPlayer] to match [orderedIndices] (whose element 0 is [currentIdx]) without
+     * reloading or interrupting the currently playing MediaItem.
+     */
+    private fun reorderAroundAnchorZero(
+        currentIdx: Int,
+        orderedIndices: List<Int>,
+        itemsSnapshot: List<MediaItem>
+    ) {
+        if (currentIdx > 0) {
+            exoPlayer.moveMediaItem(currentIdx, 0)
+        }
+        val currentCount = exoPlayer.mediaItemCount
+        if (currentCount > 1) {
+            exoPlayer.removeMediaItems(1, currentCount)
+        }
+        val upcoming = orderedIndices.drop(1).map { itemsSnapshot[it] }
+        if (upcoming.isNotEmpty()) {
+            exoPlayer.addMediaItems(1, upcoming)
+        }
+    }
+
+    /**
+     * Restores sequential order around the currently playing item at [currentIdx] so the live
+     * track continues playing smoothly at [newAnchorPos] with zero audio glitch or restart.
+     */
+    private fun restoreOrderKeepingAnchorUninterrupted(
+        currentIdx: Int,
+        restoredIndices: List<Int>,
+        newAnchorPos: Int,
+        itemsSnapshot: List<MediaItem>
+    ) {
+        val count = exoPlayer.mediaItemCount
+        if (currentIdx + 1 < count) {
+            exoPlayer.removeMediaItems(currentIdx + 1, count)
+        }
+        if (currentIdx > 0) {
+            exoPlayer.removeMediaItems(0, currentIdx)
+        }
+        // Only the anchor item remains at index 0.
+        val beforeItems = restoredIndices.take(newAnchorPos).map { itemsSnapshot[it] }
+        if (beforeItems.isNotEmpty()) {
+            exoPlayer.addMediaItems(0, beforeItems)
+        }
+        val afterItems = restoredIndices.drop(newAnchorPos + 1).map { itemsSnapshot[it] }
+        if (afterItems.isNotEmpty()) {
+            exoPlayer.addMediaItems(beforeItems.size + 1, afterItems)
+        }
+    }
+
+    private fun applyExoPlayerFlags(mode: PlaybackMode) {
+        isApplyingModeTransition = true
+        try {
+            when (mode) {
+                PlaybackMode.SEQUENTIAL -> {
+                    exoPlayer.shuffleModeEnabled = false
+                    exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+                }
+
+                PlaybackMode.SHUFFLE -> {
+                    exoPlayer.shuffleModeEnabled = true
+                    exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+                }
+
+                PlaybackMode.REPEAT_ALL -> {
+                    exoPlayer.shuffleModeEnabled = false
+                    exoPlayer.repeatMode = Player.REPEAT_MODE_ALL
+                }
+
+                PlaybackMode.REPEAT_ONE -> {
+                    exoPlayer.shuffleModeEnabled = false
+                    exoPlayer.repeatMode = Player.REPEAT_MODE_ONE
+                }
+
+                PlaybackMode.SMART_SHUFFLE -> {
+                    exoPlayer.shuffleModeEnabled = false
+                    exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+                }
+            }
+        } finally {
+            isApplyingModeTransition = false
+        }
+    }
+
+    private fun publishPlaybackModeToSession(mode: PlaybackMode) {
+        val session = mediaSession ?: return
+        session.setSessionExtras(
+            bundleOf(PlaybackSessionContract.EXTRA_PLAYBACK_MODE to mode.name)
+        )
+        session.setCustomLayout(ImmutableList.of(buildPlaybackModeCommandButton(mode)))
+    }
+
+    private fun buildPlaybackModeCommandButton(mode: PlaybackMode): CommandButton {
+        val (iconRes, label) = when (mode) {
+            PlaybackMode.SEQUENTIAL -> R.drawable.ic_mode_sequential to "Sequential"
+            PlaybackMode.SHUFFLE -> R.drawable.ic_mode_shuffle to "Shuffle"
+            PlaybackMode.REPEAT_ALL -> R.drawable.ic_mode_repeat_all to "Repeat All"
+            PlaybackMode.REPEAT_ONE -> R.drawable.ic_mode_repeat_one to "Repeat One"
+            PlaybackMode.SMART_SHUFFLE -> R.drawable.ic_mode_smart_shuffle to "Smart Shuffle"
+        }
+        return CommandButton.Builder()
+            .setSessionCommand(cyclePlaybackModeCommand)
+            .setIconResId(iconRes)
+            .setDisplayName(label)
+            .setEnabled(true)
+            .build()
+    }
+
+    private fun deriveExternalPlaybackMode(shuffleEnabled: Boolean, repeatMode: Int): PlaybackMode {
+        return when (repeatMode) {
+            Player.REPEAT_MODE_ONE -> PlaybackMode.REPEAT_ONE
+            Player.REPEAT_MODE_ALL -> PlaybackMode.REPEAT_ALL
+            else -> if (shuffleEnabled) PlaybackMode.SHUFFLE else PlaybackMode.SEQUENTIAL
+        }
+    }
+
+    private fun recordRecentSessionSong(songId: Long) {
+        if (recentSessionSongIds.lastOrNull() == songId) return
+        recentSessionSongIds.addLast(songId)
+        while (recentSessionSongIds.size > 25) {
+            recentSessionSongIds.removeFirst()
+        }
+    }
+
+    private fun resolveSongForMediaItem(container: AppContainer, mediaItem: MediaItem): Song {
+        container.audioPlayerManager.findSong(mediaItem.mediaId)?.let { return it }
+        val longId = mediaItem.mediaId.toLongOrNull() ?: -1L
+        if (longId > 0L) {
+            container.musicRepository.allSongs.value.firstOrNull { it.id == longId }?.let { return it }
+        }
+        val meta = mediaItem.mediaMetadata
+        return Song(
+            id = longId,
+            title = meta.title?.toString().orEmpty().ifBlank { "Unknown Track" },
+            artist = meta.artist?.toString().orEmpty().ifBlank { "Unknown Artist" },
+            artistId = -1L,
+            album = meta.albumTitle?.toString().orEmpty().ifBlank { "Unknown Album" },
+            albumId = -1L,
+            durationMs = 0L,
+            uri = mediaItem.localConfiguration?.uri ?: Uri.EMPTY,
+            artworkUri = meta.artworkUri ?: Uri.EMPTY,
+            path = "",
+            folderPath = "",
+            folderName = "",
+            mimeType = "",
+            sizeBytes = 0L,
+            dateAddedSec = 0L,
+            trackNumber = 0,
+            year = 0,
+            genre = meta.genre?.toString().orEmpty().ifBlank { "Unknown" }
+        )
+    }
+
+    private fun persistModeOnly(container: AppContainer) {
+        val mode = currentPlaybackMode
+        val originals = smartOriginalQueueIds
+        serviceScope.launch {
+            container.preferencesRepository.savePlaybackMode(
+                playbackMode = mode,
+                originalQueueIds = originals
+            )
+        }
+    }
+
+    private fun persistCurrentPosition(container: AppContainer) {
         if (!::exoPlayer.isInitialized) return
         val songId = exoPlayer.currentMediaItem?.mediaId?.toLongOrNull() ?: return
         val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
         val queueIds = (0 until exoPlayer.mediaItemCount).mapNotNull {
             exoPlayer.getMediaItemAt(it).mediaId.toLongOrNull()
         }
-        val shuffle = exoPlayer.shuffleModeEnabled
-        val repeat = when (exoPlayer.repeatMode) {
-            Player.REPEAT_MODE_ALL -> com.novamusic.player.data.model.RepeatModeOption.ALL
-            Player.REPEAT_MODE_ONE -> com.novamusic.player.data.model.RepeatModeOption.ONE
-            else -> com.novamusic.player.data.model.RepeatModeOption.OFF
-        }
+        val mode = currentPlaybackMode
+        val originals = smartOriginalQueueIds
         serviceScope.launch {
             container.preferencesRepository.savePlaybackState(
                 songId = songId,
                 positionMs = pos,
                 queueIds = queueIds,
-                shuffleEnabled = shuffle,
-                repeatMode = repeat
+                playbackMode = mode,
+                originalQueueIds = originals
             )
         }
     }
