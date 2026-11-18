@@ -8,6 +8,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.RemoteMessage
 import com.novamusic.player.BuildConfig
 import com.novamusic.player.data.preferences.PreferencesRepository
+import com.novamusic.player.permissions.PermissionHelper
 import com.novamusic.player.push.BroadcastDeviceRegistrar
 import com.novamusic.player.push.BroadcastNotificationParser
 import com.novamusic.player.push.BroadcastRegistrationResult
@@ -54,6 +55,14 @@ class FcmUpdatePushManager(
             return false
         }
 
+        if (!PermissionHelper.hasNotificationPermission(appContext)) {
+            Log.i(
+                TAG,
+                "Notification permission not granted yet; deferring automatic FCM backend registration."
+            )
+            return false
+        }
+
         return runCatching {
             val messaging = FirebaseMessaging.getInstance()
             messaging.isAutoInitEnabled = true
@@ -83,6 +92,11 @@ class FcmUpdatePushManager(
     suspend fun syncDeviceRegistration(force: Boolean = false): BroadcastRegistrationResult {
         AndroidUpdateNotifier.ensureNotificationChannel(appContext)
         NovaBroadcastNotificationHelper.ensureNotificationChannel(appContext)
+        if (!PermissionHelper.hasNotificationPermission(appContext)) {
+            return BroadcastRegistrationResult.NotificationPermissionDenied(
+                "Notification permission is not granted."
+            )
+        }
         val cachedToken = preferencesRepository.appSettings.first().fcmToken
         val resolvedToken = if (cachedToken.isNotBlank()) {
             cachedToken
@@ -111,6 +125,10 @@ class FcmUpdatePushManager(
         NovaBroadcastNotificationHelper.ensureNotificationChannel(appContext)
         if (token.isNotBlank()) {
             preferencesRepository.saveFcmToken(token)
+        }
+        if (!PermissionHelper.hasNotificationPermission(appContext)) {
+            Log.i(TAG, "FCM token rotated while notification permission denied; deferred backend sync.")
+            return@withLock
         }
         if (isFirebaseInitialized()) {
             runCatching {

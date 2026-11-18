@@ -74,6 +74,19 @@ class BroadcastPushTest {
         assertTrue(client.requests.isEmpty())
         assertEquals("", store.syncedToken)
 
+        val deniedRegistrar = BroadcastDeviceRegistrar(
+            store = store,
+            backendClient = client,
+            retryScheduler = retry,
+            endpointProvider = { "https://broadcast.example.com/api/devices/register" },
+            clientKeyProvider = { "" },
+            notificationsEnabledProvider = { false }
+        )
+        val deniedResult = deniedRegistrar.registerDeviceToken("fcm-token-1")
+        assertTrue(deniedResult is BroadcastRegistrationResult.NotificationPermissionDenied)
+        assertTrue(client.requests.isEmpty())
+        assertEquals("", store.syncedToken)
+
         val httpRegistrar = BroadcastDeviceRegistrar(
             store = store,
             backendClient = client,

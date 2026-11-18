@@ -57,6 +57,7 @@ data class BroadcastRegistrationPayload(
 sealed interface BroadcastRegistrationResult {
     data class Success(val syncedAtMs: Long) : BroadcastRegistrationResult
     data object AlreadySynced : BroadcastRegistrationResult
+    data class NotificationPermissionDenied(val reason: String) : BroadcastRegistrationResult
     data class NotConfigured(val reason: String) : BroadcastRegistrationResult
     data class RetryableFailure(val reason: String) : BroadcastRegistrationResult
     data class Rejected(val statusCode: Int, val reason: String) : BroadcastRegistrationResult
@@ -245,6 +246,16 @@ class BroadcastDeviceRegistrar(
         fcmToken: String,
         force: Boolean = false
     ): BroadcastRegistrationResult = syncMutex.withLock {
+        if (!notificationsEnabledProvider()) {
+            Log.i(
+                TAG,
+                "Notification permission not granted yet; deferring NOVA BROADCAST device registration."
+            )
+            return BroadcastRegistrationResult.NotificationPermissionDenied(
+                "POST_NOTIFICATIONS permission or app notifications must be enabled before registering device."
+            )
+        }
+
         val cleanToken = fcmToken.trim()
         if (cleanToken.isBlank()) {
             return BroadcastRegistrationResult.NotConfigured("FCM token is unavailable.")
@@ -316,6 +327,7 @@ class BroadcastDeviceRegistrar(
                 result
             }
             is BroadcastRegistrationResult.AlreadySynced,
+            is BroadcastRegistrationResult.NotificationPermissionDenied,
             is BroadcastRegistrationResult.NotConfigured -> result
         }
     }

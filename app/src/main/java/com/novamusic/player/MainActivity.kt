@@ -227,6 +227,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             container.updateManager.checkIfIntervalElapsed()
         }
+        if (PermissionHelper.hasNotificationPermission(this)) {
+            container.fcmUpdatePushManager.ensureRegisteredAsync()
+        }
         val grantedNow = PermissionHelper.hasAudioPermission(this)
         if (grantedNow && !hasAudioPermissionState) {
             hasAudioPermissionState = true
