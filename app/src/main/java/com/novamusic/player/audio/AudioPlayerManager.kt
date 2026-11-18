@@ -23,6 +23,7 @@ import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.service.MusicService
 import com.novamusic.player.service.PlaybackSessionContract
+import com.novamusic.player.widget.NovaWidgetCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,6 +60,13 @@ class AudioPlayerManager(
     private var pendingPlaybackAction: (() -> Unit)? = null
     private var consecutiveErrors = 0
     private var currentSettings: AppSettings = AppSettings()
+
+    @Volatile
+    private var widgetCoordinator: NovaWidgetCoordinator? = null
+
+    fun bindWidgetCoordinator(coordinator: NovaWidgetCoordinator) {
+        widgetCoordinator = coordinator
+    }
 
     init {
         scope.launch {
@@ -425,7 +433,9 @@ class AudioPlayerManager(
         val controller = mediaController ?: return
         val clamped = positionMs.coerceAtLeast(0L)
         controller.seekTo(clamped)
-        _playerState.value = _playerState.value.copy(positionMs = clamped)
+        val updated = _playerState.value.copy(positionMs = clamped)
+        _playerState.value = updated
+        widgetCoordinator?.onProgressTick(updated.positionMs, updated.durationMs)
         persistPlaybackSnapshot()
     }
 
@@ -607,11 +617,13 @@ class AudioPlayerManager(
                             controller.volume = targetVolume() * fadeOutFrac
                         }
                     }
-                    _playerState.value = _playerState.value.copy(
+                    val updated = _playerState.value.copy(
                         positionMs = pos,
                         durationMs = dur,
                         isPlaying = controller.isPlaying
                     )
+                    _playerState.value = updated
+                    widgetCoordinator?.onProgressTick(updated.positionMs, updated.durationMs)
                     persistCounter++
                     if (persistCounter >= 15) {
                         persistCounter = 0
@@ -655,7 +667,7 @@ class AudioPlayerManager(
             controller.sessionExtras.getString(PlaybackSessionContract.EXTRA_PLAYBACK_MODE)
         ) ?: _playerState.value.playbackMode
 
-        _playerState.value = _playerState.value.copy(
+        val updated = _playerState.value.copy(
             currentSong = currentSong,
             queue = queue,
             currentQueueIndex = currentIdx,
@@ -664,6 +676,8 @@ class AudioPlayerManager(
             durationMs = duration,
             playbackMode = sessionMode
         )
+        _playerState.value = updated
+        widgetCoordinator?.onPlaybackStateChanged(updated)
     }
 
     private fun recordRecentSessionSong(songId: Long) {

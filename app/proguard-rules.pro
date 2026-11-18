@@ -39,3 +39,6 @@
 
 # In-App Updater
 -keep class com.novamusic.player.update.** { *; }
+
+# Home Screen Widgets
+-keep class com.novamusic.player.widget.* extends android.appwidget.AppWidgetProvider { *; }

@@ -48,7 +48,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -68,6 +70,7 @@ class MusicService : MediaSessionService() {
     private var hasUserChangedMode = false
     private var isApplyingModeTransition = false
     private var modeTransitionJob: Job? = null
+    private var widgetTickerJob: Job? = null
     private var smartOriginalQueueIds: List<Long> = emptyList()
     private val recentSessionSongIds = ArrayDeque<Long>()
 
@@ -75,6 +78,12 @@ class MusicService : MediaSessionService() {
         SessionCommand(PlaybackSessionContract.ACTION_CYCLE_PLAYBACK_MODE, Bundle.EMPTY)
     private val setPlaybackModeCommand =
         SessionCommand(PlaybackSessionContract.ACTION_SET_PLAYBACK_MODE, Bundle.EMPTY)
+    private val widgetPlayPauseCommand =
+        SessionCommand(PlaybackSessionContract.ACTION_WIDGET_PLAY_PAUSE, Bundle.EMPTY)
+    private val widgetNextCommand =
+        SessionCommand(PlaybackSessionContract.ACTION_WIDGET_NEXT, Bundle.EMPTY)
+    private val widgetPreviousCommand =
+        SessionCommand(PlaybackSessionContract.ACTION_WIDGET_PREVIOUS, Bundle.EMPTY)
 
     private val audioBecomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -122,7 +131,11 @@ class MusicService : MediaSessionService() {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isPlaying) {
                     persistCurrentPosition(container)
+                    stopWidgetTicker()
+                } else {
+                    startWidgetTicker(container)
                 }
+                publishWidgetSnapshotFromService(container, forceFullUpdate = true)
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -130,6 +143,11 @@ class MusicService : MediaSessionService() {
                 if (songId != null && songId > 0L) {
                     recordRecentSessionSong(songId)
                 }
+                publishWidgetSnapshotFromService(container, forceFullUpdate = true)
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                publishWidgetSnapshotFromService(container, forceFullUpdate = false)
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -234,6 +252,9 @@ class MusicService : MediaSessionService() {
                     .buildUpon()
                     .add(cyclePlaybackModeCommand)
                     .add(setPlaybackModeCommand)
+                    .add(widgetPlayPauseCommand)
+                    .add(widgetNextCommand)
+                    .add(widgetPreviousCommand)
                     .build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(availableSessionCommands)
@@ -271,6 +292,15 @@ class MusicService : MediaSessionService() {
                             overrideOriginalQueueIds = overrideOriginals
                         )
                         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+
+                    PlaybackSessionContract.ACTION_WIDGET_PLAY_PAUSE,
+                    PlaybackSessionContract.ACTION_WIDGET_NEXT,
+                    PlaybackSessionContract.ACTION_WIDGET_PREVIOUS -> {
+                        return handleWidgetTransportCommand(
+                            action = customCommand.customAction,
+                            container = container
+                        )
                     }
                 }
                 return super.onCustomCommand(session, controller, customCommand, args)
@@ -416,6 +446,12 @@ class MusicService : MediaSessionService() {
     override fun onDestroy() {
         val container = (application as NovaMusicApplication).container
         persistCurrentPosition(container)
+        publishWidgetSnapshotFromService(
+            container = container,
+            forceIsPlaying = false,
+            forceFullUpdate = true
+        )
+        stopWidgetTicker()
         if (noisyReceiverRegistered) {
             runCatching { unregisterReceiver(audioBecomingNoisyReceiver) }
             noisyReceiverRegistered = false
@@ -715,5 +751,176 @@ class MusicService : MediaSessionService() {
                 originalQueueIds = originals
             )
         }
+    }
+
+    private fun handleWidgetTransportCommand(
+        action: String,
+        container: AppContainer
+    ): ListenableFuture<SessionResult> {
+        if (!::exoPlayer.isInitialized) {
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_UNKNOWN))
+        }
+        if (exoPlayer.mediaItemCount > 0) {
+            executeWidgetActionOnPlayer(action, container)
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
+        val future = SettableFuture.create<SessionResult>()
+        serviceScope.launch {
+            try {
+                val restored = restoreQueueFromPersistenceOrLibrary(container)
+                if (restored && exoPlayer.mediaItemCount > 0) {
+                    executeWidgetActionOnPlayer(action, container)
+                } else {
+                    publishWidgetSnapshotFromService(container, forceFullUpdate = true)
+                }
+                future.set(SessionResult(SessionResult.RESULT_SUCCESS))
+            } catch (_: Throwable) {
+                future.set(SessionResult(SessionResult.RESULT_ERROR_UNKNOWN))
+            }
+        }
+        return future
+    }
+
+    private suspend fun restoreQueueFromPersistenceOrLibrary(container: AppContainer): Boolean {
+        if (container.musicRepository.allSongs.value.isEmpty()) {
+            runCatching { container.musicRepository.refreshLibrary() }
+        }
+        val allSongs = container.musicRepository.allSongs.value
+        if (allSongs.isEmpty()) return false
+
+        val byId = allSongs.associateBy { it.id }
+        val saved = container.preferencesRepository.getPlaybackPersistenceState()
+        val queueSongs = saved.queueSongIds.mapNotNull { byId[it] }
+            .ifEmpty { listOfNotNull(byId[saved.lastSongId]) }
+            .ifEmpty { allSongs.take(100) }
+
+        if (queueSongs.isEmpty()) return false
+
+        container.audioPlayerManager.registerSongs(queueSongs)
+        val startIdx = queueSongs.indexOfFirst { it.id == saved.lastSongId }.coerceAtLeast(0)
+        val startPos = if (queueSongs.getOrNull(startIdx)?.id == saved.lastSongId) {
+            saved.lastPositionMs.coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        val includeArt = currentSettings.showNotificationArtwork
+        val mediaItems = queueSongs.map { song ->
+            val metaBuilder = MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .setAlbumTitle(song.album)
+                .setAlbumArtist(song.artist)
+                .setGenre(song.genre)
+                .setIsPlayable(true)
+                .setIsBrowsable(false)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            if (includeArt) {
+                metaBuilder.setArtworkUri(song.artworkUri)
+            }
+            MediaItem.Builder()
+                .setMediaId(song.id.toString())
+                .setUri(song.uri)
+                .setMediaMetadata(metaBuilder.build())
+                .build()
+        }
+
+        exoPlayer.setMediaItems(mediaItems, startIdx, startPos)
+        applyPlaybackMode(
+            container = container,
+            targetMode = saved.playbackMode,
+            restoreOnly = true,
+            overrideOriginalQueueIds = saved.originalQueueSongIds
+        )
+        exoPlayer.prepare()
+        return true
+    }
+
+    private fun executeWidgetActionOnPlayer(action: String, container: AppContainer) {
+        when (action) {
+            PlaybackSessionContract.ACTION_WIDGET_PLAY_PAUSE -> {
+                if (exoPlayer.isPlaying) {
+                    exoPlayer.pause()
+                } else {
+                    when (exoPlayer.playbackState) {
+                        Player.STATE_IDLE -> if (exoPlayer.mediaItemCount > 0) exoPlayer.prepare()
+                        Player.STATE_ENDED -> {
+                            if (exoPlayer.mediaItemCount > 0) {
+                                exoPlayer.seekToDefaultPosition(0)
+                            }
+                        }
+                    }
+                    exoPlayer.play()
+                }
+            }
+
+            PlaybackSessionContract.ACTION_WIDGET_NEXT -> {
+                if (exoPlayer.hasNextMediaItem()) {
+                    exoPlayer.seekToNextMediaItem()
+                } else if (exoPlayer.mediaItemCount > 0) {
+                    exoPlayer.seekToDefaultPosition(0)
+                }
+                if (exoPlayer.playbackState == Player.STATE_IDLE || exoPlayer.playbackState == Player.STATE_ENDED) {
+                    exoPlayer.prepare()
+                }
+                exoPlayer.play()
+            }
+
+            PlaybackSessionContract.ACTION_WIDGET_PREVIOUS -> {
+                if (exoPlayer.currentPosition > 3_500L) {
+                    exoPlayer.seekTo(0L)
+                } else if (exoPlayer.hasPreviousMediaItem()) {
+                    exoPlayer.seekToPreviousMediaItem()
+                } else {
+                    exoPlayer.seekTo(0L)
+                }
+            }
+        }
+        publishWidgetSnapshotFromService(container, forceFullUpdate = true)
+    }
+
+    private fun startWidgetTicker(container: AppContainer) {
+        widgetTickerJob?.cancel()
+        if (!container.widgetCoordinator.hasActiveWidgets()) return
+        widgetTickerJob = serviceScope.launch {
+            while (isActive && ::exoPlayer.isInitialized && exoPlayer.isPlaying) {
+                if (!container.widgetCoordinator.hasActiveWidgets()) break
+                val duration = exoPlayer.duration.takeIf { it > 0L }
+                    ?: exoPlayer.currentMediaItem?.let { resolveSongForMediaItem(container, it).durationMs }
+                    ?: 0L
+                container.widgetCoordinator.onProgressTick(
+                    positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+                    durationMs = duration
+                )
+                delay(1000L)
+            }
+        }
+    }
+
+    private fun stopWidgetTicker() {
+        widgetTickerJob?.cancel()
+        widgetTickerJob = null
+    }
+
+    private fun publishWidgetSnapshotFromService(
+        container: AppContainer,
+        forceIsPlaying: Boolean? = null,
+        forceFullUpdate: Boolean = false
+    ) {
+        if (!::exoPlayer.isInitialized || !container.widgetCoordinator.hasActiveWidgets()) return
+        val currentItem = exoPlayer.currentMediaItem
+        val song = currentItem?.let { resolveSongForMediaItem(container, it) }
+        val duration = exoPlayer.duration.takeIf { it > 0L } ?: song?.durationMs ?: 0L
+        container.widgetCoordinator.onServicePlaybackSnapshot(
+            songId = song?.id ?: -1L,
+            title = song?.title,
+            artist = song?.artist,
+            album = song?.album,
+            artworkUri = song?.artworkUri,
+            isPlaying = forceIsPlaying ?: exoPlayer.isPlaying,
+            positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+            durationMs = duration,
+            forceFullUpdate = forceFullUpdate
+        )
     }
 }

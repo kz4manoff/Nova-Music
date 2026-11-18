@@ -10,6 +10,7 @@ import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.data.scanner.MusicScanner
 import com.novamusic.player.database.NovaDatabase
 import com.novamusic.player.update.UpdateManager
+import com.novamusic.player.widget.NovaWidgetCoordinator
 
 class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
@@ -23,11 +24,18 @@ class AppContainer(context: Context) {
     )
     val equalizerManager: EqualizerManager = EqualizerManager(preferencesRepository)
     val audioOutputManager: AudioOutputManager = AudioOutputManager(appContext)
+    val widgetCoordinator: NovaWidgetCoordinator = NovaWidgetCoordinator(
+        context = appContext,
+        preferencesRepository = preferencesRepository,
+        musicRepository = musicRepository
+    )
     val audioPlayerManager: AudioPlayerManager = AudioPlayerManager(
         context = appContext,
         repository = musicRepository,
         preferences = preferencesRepository
-    )
+    ).apply {
+        bindWidgetCoordinator(widgetCoordinator)
+    }
     val updateManager: UpdateManager = UpdateManager(
         context = appContext,
         preferences = preferencesRepository

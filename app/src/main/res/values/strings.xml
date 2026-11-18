@@ -6,4 +6,17 @@
     <string name="permission_audio_title">Access Your Music Library</string>
     <string name="permission_audio_description">NOVA MUSIC needs permission to scan offline audio files stored on your device. No internet access is required.</string>
     <string name="grant_permission">Grant Permission</string>
+
+    <!-- Home Screen Music Widgets -->
+    <string name="widget_medium_label">Nova Music (Compact)</string>
+    <string name="widget_medium_description">Compact Liquid Glass music player with artwork, track details, and playback controls.</string>
+    <string name="widget_large_label">Nova Music (Expanded)</string>
+    <string name="widget_large_description">Expanded Liquid Glass music player with album artwork, progress bar, track duration, and controls.</string>
+    <string name="widget_empty_title">No track playing</string>
+    <string name="widget_empty_subtitle">Tap to open NOVA MUSIC</string>
+    <string name="widget_brand_label">NOVA</string>
+    <string name="widget_cd_artwork">Album artwork</string>
+    <string name="widget_cd_previous">Previous track</string>
+    <string name="widget_cd_play_pause">Play or pause</string>
+    <string name="widget_cd_next">Next track</string>
 </resources>

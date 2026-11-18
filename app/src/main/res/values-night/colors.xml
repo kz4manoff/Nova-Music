@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Liquid Glass App Widget (Dark / Night Mode) -->
+    <color name="widget_glass_bg_top">#DC161822</color>
+    <color name="widget_glass_bg_bottom">#EA090A0F</color>
+    <color name="widget_glass_border">#36FFFFFF</color>
+    <color name="widget_glass_sheen_top">#30FFFFFF</color>
+    <color name="widget_glass_sheen_mid">#0AFFFFFF</color>
+    <color name="widget_text_primary">#F7F8FA</color>
+    <color name="widget_text_secondary">#A6ACB9</color>
+    <color name="widget_text_brand">#99FFFFFF</color>
+    <color name="widget_control_surface">#1EFFFFFF</color>
+    <color name="widget_control_surface_pressed">#3CFFFFFF</color>
+    <color name="widget_control_border">#2EFFFFFF</color>
+    <color name="widget_control_icon">#F4F5F8</color>
+    <color name="widget_play_orb_start">#FF274E</color>
+    <color name="widget_play_orb_end">#CC002B</color>
+    <color name="widget_play_orb_border">#5CFFFFFF</color>
+    <color name="widget_play_icon">#FFFFFF</color>
+    <color name="widget_progress_track">#26FFFFFF</color>
+    <color name="widget_progress_fill">#FF274E</color>
+    <color name="widget_artwork_surface">#FF14161E</color>
+    <color name="widget_artwork_border">#3DFFFFFF</color>
+</resources>

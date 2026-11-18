@@ -4,4 +4,26 @@
     <color name="nova_surface">#181818</color>
     <color name="nova_red">#FF1744</color>
     <color name="ic_launcher_background">#050505</color>
+
+    <!-- Liquid Glass App Widget (Light Mode) -->
+    <color name="widget_glass_bg_top">#E8F8F9FC</color>
+    <color name="widget_glass_bg_bottom">#D8EAECF5</color>
+    <color name="widget_glass_border">#CCFFFFFF</color>
+    <color name="widget_glass_sheen_top">#A8FFFFFF</color>
+    <color name="widget_glass_sheen_mid">#24FFFFFF</color>
+    <color name="widget_text_primary">#101218</color>
+    <color name="widget_text_secondary">#555C6E</color>
+    <color name="widget_text_brand">#8A101218</color>
+    <color name="widget_control_surface">#18101218</color>
+    <color name="widget_control_surface_pressed">#30101218</color>
+    <color name="widget_control_border">#7AFFFFFF</color>
+    <color name="widget_control_icon">#12151E</color>
+    <color name="widget_play_orb_start">#FF2B52</color>
+    <color name="widget_play_orb_end">#D50032</color>
+    <color name="widget_play_orb_border">#85FFFFFF</color>
+    <color name="widget_play_icon">#FFFFFF</color>
+    <color name="widget_progress_track">#22101218</color>
+    <color name="widget_progress_fill">#FF1744</color>
+    <color name="widget_artwork_surface">#E2E6F0</color>
+    <color name="widget_artwork_border">#99FFFFFF</color>
 </resources>
