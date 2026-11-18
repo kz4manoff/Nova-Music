@@ -6,4 +6,7 @@
     <cache-path
         name="nova_update_cache"
         path="updates/" />
+    <cache-path
+        name="nova_wrapped_cache"
+        path="wrapped/" />
 </paths>

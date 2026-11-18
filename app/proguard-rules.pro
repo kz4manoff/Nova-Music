@@ -42,3 +42,6 @@
 
 # Home Screen Widgets
 -keep class com.novamusic.player.widget.* extends android.appwidget.AppWidgetProvider { *; }
+
+# Nova Wrapped Analytics & Models
+-keep class com.novamusic.player.wrapped.** { *; }

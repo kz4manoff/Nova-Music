@@ -29,8 +29,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -101,6 +103,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     availableUpdateVersion: String? = null,
     onOpenUpdates: (() -> Unit)? = null,
+    onOpenWrapped: () -> Unit = {},
     bottomContentPadding: Dp
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -199,6 +202,11 @@ fun HomeScreen(
                 onBrowseLibrary = onOpenLibrary,
                 onOpenNowPlaying = onOpenNowPlaying
             )
+        }
+
+        // NOVA WRAPPED Interactive Stories Entry Card
+        item(key = "home_nova_wrapped_entry") {
+            NovaWrappedHomeCard(onClick = onOpenWrapped)
         }
 
         if (state.allSongsCount == 0 && !state.isScanning) {
@@ -307,6 +315,94 @@ fun HomeScreen(
             },
             onDismiss = { showCreatePlaylistDialog = false }
         )
+    }
+}
+
+@Composable
+private fun NovaWrappedHomeCard(
+    onClick: () -> Unit
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val palette = LocalArtworkPalette.current
+
+    LiquidGlassSurface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        accentTint = lerp(accent, palette.glow, 0.45f),
+        highlighted = true,
+        elevation = 14.dp,
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                accent.copy(alpha = 0.42f),
+                                NovaRedSecondary.copy(alpha = 0.24f)
+                            )
+                        )
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "LISTENING INSIGHTS",
+                    style = NovaMonoTelemetry.copy(fontSize = 9.5.sp),
+                    color = accent
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "NOVA WRAPPED",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Your real top tracks, artists, listening hours & sound persona",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = "Open NOVA WRAPPED",
+                    tint = accent,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 

@@ -108,6 +108,8 @@ import com.novamusic.player.ui.settings.SettingsViewModel
 import com.novamusic.player.ui.settings.StorageSettingsPage
 import com.novamusic.player.ui.theme.LocalArtworkPalette
 import com.novamusic.player.ui.theme.rememberArtworkPalette
+import com.novamusic.player.ui.wrapped.WrappedScreen
+import com.novamusic.player.ui.wrapped.WrappedViewModel
 import com.novamusic.player.update.UpdateUiState
 
 @Composable
@@ -125,6 +127,7 @@ fun NovaMainAppShell(
     val equalizerViewModel: EqualizerViewModel = viewModel(factory = factory)
     val playlistsViewModel: PlaylistsViewModel = viewModel(factory = factory)
     val settingsViewModel: SettingsViewModel = viewModel(factory = factory)
+    val wrappedViewModel: WrappedViewModel = viewModel(factory = factory)
 
     val playerState by playerViewModel.playerState.collectAsStateWithLifecycle()
     val audioRoutingState by playerViewModel.audioRoutingState.collectAsStateWithLifecycle()
@@ -212,6 +215,7 @@ fun NovaMainAppShell(
         currentRoute == NovaDestinations.SETTINGS ||
             currentRoute.startsWith("${NovaDestinations.SETTINGS}/")
     }
+    val isWrappedRoute = currentRoute == NovaDestinations.WRAPPED
 
     // 4 Floating Liquid Glass Tabs in exact order: Home, Library, Search, Playlists
     val bottomTabs = remember {
@@ -304,6 +308,7 @@ fun NovaMainAppShell(
                             )
                             .navigationBarsPadding()
                     ) {
+                    if (!isWrappedRoute) {
                         LiquidGlassMiniPlayer(
                             playerState = if (miniPlayerDismissed) {
                                 playerState.copy(currentSong = null)
@@ -324,9 +329,10 @@ fun NovaMainAppShell(
                             activeOutputDevice = audioRoutingState.activeDevice,
                             onOpenAudioOutput = { showAudioOutputSheet = true }
                         )
+                    }
 
-                        AnimatedVisibility(
-                            visible = !isSettingsRoute,
+                    AnimatedVisibility(
+                        visible = !isSettingsRoute && !isWrappedRoute,
                             enter = if (reducedMotion) {
                                 fadeIn(tween(90)) + expandVertically(
                                     animationSpec = snap(),
@@ -452,6 +458,11 @@ fun NovaMainAppShell(
                             },
                             availableUpdateVersion = pendingUpdateVersion,
                             onOpenUpdates = openUpdatesDestination,
+                            onOpenWrapped = {
+                                navController.navigate(NovaDestinations.WRAPPED) {
+                                    launchSingleTop = true
+                                }
+                            },
                             bottomContentPadding = miniPlayerHeight
                         )
                     }
@@ -501,6 +512,13 @@ fun NovaMainAppShell(
                             viewModel = equalizerViewModel,
                             onBack = { navController.popBackStack() },
                             bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.WRAPPED) {
+                        WrappedScreen(
+                            viewModel = wrappedViewModel,
+                            onBack = { navController.popBackStack() }
                         )
                     }
 

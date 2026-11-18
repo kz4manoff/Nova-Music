@@ -8,6 +8,7 @@ import androidx.room.Transaction
 import com.novamusic.player.database.entities.CustomPresetEntity
 import com.novamusic.player.database.entities.FavoriteFolderEntity
 import com.novamusic.player.database.entities.FavoriteSongEntity
+import com.novamusic.player.database.entities.ListeningEventEntity
 import com.novamusic.player.database.entities.PlaybackHistoryEntity
 import com.novamusic.player.database.entities.PlaylistEntity
 import com.novamusic.player.database.entities.PlaylistSongCrossRef
@@ -148,4 +149,46 @@ interface LyricsDao {
 
     @Query("DELETE FROM track_lyrics WHERE songId = :songId")
     suspend fun deleteLyrics(songId: Long)
+}
+
+@Dao
+interface ListeningDao {
+    @Query("SELECT * FROM listening_events WHERE sessionId = :sessionId LIMIT 1")
+    suspend fun getBySessionId(sessionId: String): ListeningEventEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrReplace(entity: ListeningEventEntity): Long
+
+    @Transaction
+    suspend fun upsertSessionEvent(entity: ListeningEventEntity) {
+        val existing = getBySessionId(entity.sessionId)
+        val merged = if (existing != null) {
+            entity.copy(
+                id = existing.id,
+                listenedMs = maxOf(existing.listenedMs, entity.listenedMs),
+                endedAtMs = maxOf(existing.endedAtMs, entity.endedAtMs),
+                countedPlay = existing.countedPlay || entity.countedPlay,
+                completed = existing.completed || entity.completed,
+                skipped = if (existing.completed || entity.completed) false else (existing.skipped || entity.skipped)
+            )
+        } else {
+            entity
+        }
+        insertOrReplace(merged)
+    }
+
+    @Query("SELECT * FROM listening_events WHERE startedAtMs >= :startMs AND startedAtMs <= :endMs ORDER BY startedAtMs DESC")
+    fun observeEventsBetween(startMs: Long, endMs: Long): Flow<List<ListeningEventEntity>>
+
+    @Query("SELECT * FROM listening_events WHERE startedAtMs >= :startMs AND startedAtMs <= :endMs ORDER BY startedAtMs DESC")
+    suspend fun getEventsBetween(startMs: Long, endMs: Long): List<ListeningEventEntity>
+
+    @Query("SELECT MIN(startedAtMs) FROM listening_events")
+    suspend fun getEarliestTimestampMs(): Long?
+
+    @Query("SELECT COUNT(*) FROM listening_events")
+    suspend fun getTotalEventCount(): Int
+
+    @Query("DELETE FROM listening_events")
+    suspend fun clearAllListeningEvents()
 }

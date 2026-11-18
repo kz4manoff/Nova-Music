@@ -43,6 +43,7 @@ import com.novamusic.player.data.model.NotificationAppearance
 import com.novamusic.player.data.model.PlaybackMode
 import com.novamusic.player.data.model.Song
 import com.novamusic.player.data.preferences.AppSettings
+import com.novamusic.player.wrapped.TrackedTrackSnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -122,6 +123,8 @@ class MusicService : MediaSessionService() {
         noisyReceiverRegistered = true
 
         exoPlayer.addListener(object : Player.Listener {
+            private var lastOutgoingPositionMs: Long = 0L
+
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 if (audioSessionId != C.AUDIO_SESSION_ID_UNSET && audioSessionId > 0) {
                     container.equalizerManager.attachToSession(audioSessionId)
@@ -135,6 +138,14 @@ class MusicService : MediaSessionService() {
                 } else {
                     startWidgetTicker(container)
                 }
+                val currentSnapshot = exoPlayer.currentMediaItem?.let { item ->
+                    buildTrackedSnapshot(container, item)
+                }
+                container.listeningTracker.onIsPlayingChanged(
+                    isPlaying = isPlaying,
+                    currentTrack = currentSnapshot,
+                    currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                )
                 publishWidgetSnapshotFromService(container, forceFullUpdate = true)
             }
 
@@ -143,11 +154,40 @@ class MusicService : MediaSessionService() {
                 if (songId != null && songId > 0L) {
                     recordRecentSessionSong(songId)
                 }
+                val newSnapshot = mediaItem?.let { buildTrackedSnapshot(container, it) }
+                val autoOrRepeat = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                container.listeningTracker.onTrackChanged(
+                    newTrack = newSnapshot,
+                    isCurrentlyPlaying = exoPlayer.isPlaying,
+                    wasAutoOrRepeatTransition = autoOrRepeat,
+                    outgoingPositionMs = lastOutgoingPositionMs
+                )
+                lastOutgoingPositionMs = 0L
                 publishWidgetSnapshotFromService(container, forceFullUpdate = true)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    container.listeningTracker.onPlaybackEnded(
+                        durationMs = exoPlayer.duration.takeIf { it > 0L } ?: 0L
+                    )
+                }
                 publishWidgetSnapshotFromService(container, forceFullUpdate = false)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
+                    lastOutgoingPositionMs = oldPosition.positionMs.coerceAtLeast(0L)
+                } else if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    container.listeningTracker.onSeekDiscontinuity(
+                        newPositionMs = newPosition.positionMs.coerceAtLeast(0L)
+                    )
+                }
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -437,6 +477,7 @@ class MusicService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         val container = (application as NovaMusicApplication).container
         persistCurrentPosition(container)
+        container.listeningTracker.checkpointNow()
         val player = mediaSession?.player
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
@@ -446,6 +487,7 @@ class MusicService : MediaSessionService() {
     override fun onDestroy() {
         val container = (application as NovaMusicApplication).container
         persistCurrentPosition(container)
+        container.listeningTracker.onServiceDestroyed()
         publishWidgetSnapshotFromService(
             container = container,
             forceIsPlaying = false,
@@ -720,6 +762,20 @@ class MusicService : MediaSessionService() {
             year = 0,
             genre = meta.genre?.toString().orEmpty().ifBlank { "Unknown" }
         )
+    }
+
+    private fun buildTrackedSnapshot(
+        container: AppContainer,
+        mediaItem: MediaItem
+    ): TrackedTrackSnapshot {
+        val resolved = resolveSongForMediaItem(container, mediaItem)
+        val snapshot = TrackedTrackSnapshot.fromSong(resolved)
+        val fallbackDuration = exoPlayer.duration.takeIf { it > 0L } ?: snapshot.durationMs
+        return if (fallbackDuration != snapshot.durationMs) {
+            snapshot.copy(durationMs = fallbackDuration)
+        } else {
+            snapshot
+        }
     }
 
     private fun persistModeOnly(container: AppContainer) {

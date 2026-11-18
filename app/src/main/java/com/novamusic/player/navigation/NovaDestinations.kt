@@ -8,6 +8,7 @@ object NovaDestinations {
     const val LIBRARY_SEARCH = "library?search=true"
     const val SEARCH = "search"
     const val PLAYLISTS = "playlists"
+    const val WRAPPED = "wrapped"
     const val EQUALIZER = "equalizer"
     const val SETTINGS = "settings"
     const val SETTINGS_APPEARANCE = "settings/appearance"

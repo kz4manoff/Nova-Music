@@ -9,6 +9,7 @@ import com.novamusic.player.ui.library.LibraryViewModel
 import com.novamusic.player.ui.player.PlayerViewModel
 import com.novamusic.player.ui.playlists.PlaylistsViewModel
 import com.novamusic.player.ui.settings.SettingsViewModel
+import com.novamusic.player.ui.wrapped.WrappedViewModel
 
 class NovaViewModelFactory(
     private val container: AppContainer
@@ -36,6 +37,13 @@ class NovaViewModelFactory(
             }
             modelClass.isAssignableFrom(PlaylistsViewModel::class.java) -> {
                 PlaylistsViewModel(container.musicRepository, container.audioPlayerManager) as T
+            }
+            modelClass.isAssignableFrom(WrappedViewModel::class.java) -> {
+                WrappedViewModel(
+                    wrappedRepository = container.wrappedRepository,
+                    musicRepository = container.musicRepository,
+                    playerManager = container.audioPlayerManager
+                ) as T
             }
             modelClass.isAssignableFrom(SettingsViewModel::class.java) -> {
                 SettingsViewModel(

@@ -11,6 +11,8 @@ import com.novamusic.player.data.scanner.MusicScanner
 import com.novamusic.player.database.NovaDatabase
 import com.novamusic.player.update.UpdateManager
 import com.novamusic.player.widget.NovaWidgetCoordinator
+import com.novamusic.player.wrapped.ListeningTracker
+import com.novamusic.player.wrapped.WrappedRepository
 
 class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
@@ -21,6 +23,10 @@ class AppContainer(context: Context) {
         scanner = musicScanner,
         database = database,
         preferences = preferencesRepository
+    )
+    val wrappedRepository: WrappedRepository = WrappedRepository(database.listeningDao())
+    val listeningTracker: ListeningTracker = ListeningTracker(
+        persistCallback = { event -> wrappedRepository.persistListeningSession(event) }
     )
     val equalizerManager: EqualizerManager = EqualizerManager(preferencesRepository)
     val audioOutputManager: AudioOutputManager = AudioOutputManager(appContext)

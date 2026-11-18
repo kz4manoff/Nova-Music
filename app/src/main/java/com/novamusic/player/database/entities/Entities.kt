@@ -70,3 +70,35 @@ data class TrackLyricsEntity(
     val rawLyrics: String,
     val updatedAt: Long = System.currentTimeMillis()
 )
+
+@Entity(
+    tableName = "listening_events",
+    indices = [
+        Index(value = ["sessionId"], unique = true),
+        Index(value = ["startedAtMs"]),
+        Index(value = ["localYear", "localMonth"])
+    ]
+)
+data class ListeningEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val sessionId: String,
+    val songId: Long,
+    val trackKey: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val albumId: Long,
+    val genre: String,
+    val artworkUri: String,
+    val trackDurationMs: Long,
+    val listenedMs: Long,
+    val startedAtMs: Long,
+    val endedAtMs: Long,
+    val localYear: Int,
+    val localMonth: Int,
+    val localDayKey: Int,
+    val hourOfDay: Int,
+    val countedPlay: Boolean,
+    val completed: Boolean,
+    val skipped: Boolean
+)
