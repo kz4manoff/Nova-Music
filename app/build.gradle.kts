@@ -31,11 +31,11 @@ val hasReleaseSigning = !releaseStorePath.isNullOrBlank() &&
 
 val resolvedVersionCode = (findProperty("NOVA_VERSION_CODE") as String?)?.toIntOrNull()
     ?: System.getenv("NOVA_VERSION_CODE")?.toIntOrNull()
-    ?: 19
+    ?: 20
 
 val resolvedVersionName = (findProperty("NOVA_VERSION_NAME") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_VERSION_NAME")?.takeIf { it.isNotBlank() }
-    ?: "1.1.8"
+    ?: "1.1.9"
 
 val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }

@@ -9,10 +9,12 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -42,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -205,6 +208,10 @@ fun NovaMainAppShell(
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: NovaDestinations.HOME
+    val isSettingsRoute = remember(currentRoute) {
+        currentRoute == NovaDestinations.SETTINGS ||
+            currentRoute.startsWith("${NovaDestinations.SETTINGS}/")
+    }
 
     // 4 Floating Liquid Glass Tabs in exact order: Home, Library, Search, Playlists
     val bottomTabs = remember {
@@ -318,11 +325,54 @@ fun NovaMainAppShell(
                             onOpenAudioOutput = { showAudioOutputSheet = true }
                         )
 
-                        LiquidGlassTabBar(
-                            tabs = bottomTabs,
-                            currentRoute = currentRoute,
-                            onSelectTab = { tab -> navigateTab(tab.route) }
-                        )
+                        AnimatedVisibility(
+                            visible = !isSettingsRoute,
+                            enter = if (reducedMotion) {
+                                fadeIn(tween(90)) + expandVertically(
+                                    animationSpec = snap(),
+                                    expandFrom = Alignment.Bottom
+                                )
+                            } else {
+                                fadeIn(tween(240, easing = FastOutSlowInEasing)) +
+                                    slideInVertically(
+                                        animationSpec = spring(
+                                            dampingRatio = 0.86f,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        ),
+                                        initialOffsetY = { it }
+                                    ) +
+                                    expandVertically(
+                                        animationSpec = spring(
+                                            dampingRatio = 0.88f,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        ),
+                                        expandFrom = Alignment.Bottom
+                                    )
+                            },
+                            exit = if (reducedMotion) {
+                                fadeOut(tween(90)) + shrinkVertically(
+                                    animationSpec = snap(),
+                                    shrinkTowards = Alignment.Bottom
+                                )
+                            } else {
+                                fadeOut(tween(180, easing = FastOutSlowInEasing)) +
+                                    slideOutVertically(
+                                        animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                        targetOffsetY = { it }
+                                    ) +
+                                    shrinkVertically(
+                                        animationSpec = tween(220, easing = FastOutSlowInEasing),
+                                        shrinkTowards = Alignment.Bottom
+                                    )
+                            },
+                            label = "settings_navbar_visibility"
+                        ) {
+                            LiquidGlassTabBar(
+                                tabs = bottomTabs,
+                                currentRoute = currentRoute,
+                                onSelectTab = { tab -> navigateTab(tab.route) }
+                            )
+                        }
                     }
                 }
             ) { innerPadding ->

@@ -1198,9 +1198,14 @@ fun LiquidGlassTabBar(
                 val tabWidth = maxWidth / count
                 val tabWidthPx = with(density) { tabWidth.toPx() }.coerceAtLeast(1f)
                 val innerPadPx = with(density) { 6.dp.toPx() }
-                // Circular active glass orb sized noticeably larger than the 22dp icon & inactive area
-                val lensDiameter = minOf((maxHeight - 2.dp).coerceAtLeast(44.dp), (tabWidth - 8.dp).coerceAtLeast(44.dp))
-                val lensDiameterPx = with(density) { lensDiameter.toPx() }
+
+                // Elongated horizontal Liquid Glass capsule proportioned to the navbar & comfortably framing the tab item
+                val capsuleHeight = (maxHeight - 4.dp).coerceIn(36.dp, 46.dp)
+                val capsuleWidth = (tabWidth - 6.dp).coerceAtLeast(44.dp)
+                val capsuleWidthPx = with(density) { capsuleWidth.toPx() }
+                val capsuleShape = RoundedCornerShape(50)
+                val supportsHardwareBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                val capsuleBlurPx = with(density) { 14.dp.toPx() }
 
                 val isDragging = dragSlot != null
                 val travelDelta = if (reducedMotion || animStyle == PlayerAnimationStyle.MINIMAL) {
@@ -1210,98 +1215,141 @@ fun LiquidGlassTabBar(
                     val velStretch = (abs(animatedVelocityX) / 1600f).coerceIn(0f, 0.85f)
                     (settleDist * 0.42f + velStretch * 0.48f).coerceIn(0f, 0.85f)
                 }
-                val lensScaleX = (1f + travelDelta * 0.24f) * touchLensBoost
-                val lensScaleY = (1f - travelDelta * 0.07f) * touchLensBoost
-                val indicatorX = indicatorSlot * tabWidthPx + (tabWidthPx - lensDiameterPx) / 2f
+                // Subtle volume-conserving liquid morphing during horizontal transitions
+                val lensScaleX = (1f + travelDelta * 0.18f) * touchLensBoost
+                val lensScaleY = (1f - travelDelta * 0.08f) * touchLensBoost
+                val indicatorX = indicatorSlot * tabWidthPx + (tabWidthPx - capsuleWidthPx) / 2f
 
-                // Floating Circular Liquid Glass Lens with subtle crimson/dark-red reflections & optical depth
+                // Elongated Horizontal Liquid Glass Capsule Indicator
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .size(lensDiameter)
+                        .width(capsuleWidth)
+                        .height(capsuleHeight)
                         .graphicsLayer {
                             translationX = indicatorX
                             scaleX = lensScaleX
                             scaleY = lensScaleY
                         }
                         .shadow(
-                            elevation = 12.dp,
-                            shape = CircleShape,
-                            ambientColor = NovaRedPrimary.copy(alpha = 0.45f),
-                            spotColor = NovaRedSecondary.copy(alpha = 0.40f)
+                            elevation = 14.dp,
+                            shape = capsuleShape,
+                            ambientColor = NovaRedPrimary.copy(alpha = 0.36f),
+                            spotColor = Color.Black.copy(alpha = 0.78f)
                         )
-                        .clip(CircleShape)
+                        .clip(capsuleShape)
                         .background(
-                            Brush.linearGradient(
+                            Brush.verticalGradient(
                                 colors = listOf(
-                                    NovaRedPrimary.copy(alpha = 0.26f),
-                                    Color(0xCC180509),
-                                    NovaRedSecondary.copy(alpha = 0.34f)
+                                    Color(0xB818181D),
+                                    Color(0xCC0A0A0D),
+                                    Color(0xD8050508)
                                 )
                             )
                         )
-                        .drawBehind {
-                            // Soft top-left specular glass droplet highlight
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.26f),
-                                        NovaRedGlow.copy(alpha = 0.10f),
-                                        Color.Transparent
+                ) {
+                    // Internal frosted blur diffusion & subtle red/pink ambient glow
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                if (supportsHardwareBlur) {
+                                    renderEffect = RenderEffect
+                                        .createBlurEffect(capsuleBlurPx, capsuleBlurPx, Shader.TileMode.CLAMP)
+                                        .asComposeRenderEffect()
+                                }
+                            }
+                            .drawBehind {
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            NovaRedPrimary.copy(alpha = 0.24f),
+                                            NovaRedGlow.copy(alpha = 0.14f),
+                                            Color.Transparent
+                                        ),
+                                        center = Offset(size.width * 0.50f, size.height * 0.72f),
+                                        radius = size.width * 0.58f
                                     ),
-                                    center = Offset(size.width * 0.30f, size.height * 0.22f),
-                                    radius = size.width * 0.48f
-                                ),
-                                radius = size.width * 0.48f,
-                                center = Offset(size.width * 0.30f, size.height * 0.22f)
-                            )
-
-                            // Soft lower-right crimson internal glass reflection
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        NovaRedPrimary.copy(alpha = 0.24f),
-                                        NovaRedSecondary.copy(alpha = 0.12f),
-                                        Color.Transparent
+                                    radius = size.width * 0.58f,
+                                    center = Offset(size.width * 0.50f, size.height * 0.72f)
+                                )
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            Color.White.copy(alpha = 0.18f),
+                                            Color.Transparent
+                                        ),
+                                        center = Offset(size.width * 0.28f, size.height * 0.16f),
+                                        radius = size.width * 0.42f
                                     ),
-                                    center = Offset(size.width * 0.72f, size.height * 0.78f),
-                                    radius = size.width * 0.52f
-                                ),
-                                radius = size.width * 0.52f,
-                                center = Offset(size.width * 0.72f, size.height * 0.78f)
-                            )
+                                    radius = size.width * 0.42f,
+                                    center = Offset(size.width * 0.28f, size.height * 0.16f)
+                                )
+                            }
+                    )
 
-                            // Crisp upper inner optical rim arc for authentic spherical glass depth
-                            val inset = 2.dp.toPx()
-                            drawArc(
-                                brush = Brush.horizontalGradient(
+                    // Glossy specular glass reflections, inner highlights, and thin semi-transparent white border
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .drawBehind {
+                                // Top glossy catchlight sheen
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.White.copy(alpha = 0.26f),
+                                            Color.White.copy(alpha = 0.06f),
+                                            Color.Transparent
+                                        ),
+                                        startY = 0f,
+                                        endY = size.height * 0.48f
+                                    )
+                                )
+                                // Subtle bottom inner shadow + crimson bounce highlight
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            NovaRedPrimary.copy(alpha = 0.10f),
+                                            Color.Black.copy(alpha = 0.30f)
+                                        ),
+                                        startY = size.height * 0.58f,
+                                        endY = size.height
+                                    )
+                                )
+                                // Crisp upper horizontal inner specular highlight line
+                                val insetY = 2.dp.toPx()
+                                val insetX = size.height * 0.28f
+                                drawLine(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.White.copy(alpha = 0.36f),
+                                            Color.Transparent
+                                        ),
+                                        startX = insetX,
+                                        endX = size.width - insetX
+                                    ),
+                                    start = Offset(insetX, insetY),
+                                    end = Offset(size.width - insetX, insetY),
+                                    strokeWidth = 1.dp.toPx(),
+                                    cap = StrokeCap.Round
+                                )
+                            }
+                            .border(
+                                width = 0.9.dp,
+                                brush = Brush.linearGradient(
                                     colors = listOf(
-                                        Color.Transparent,
-                                        Color.White.copy(alpha = 0.34f),
-                                        Color.Transparent
+                                        Color.White.copy(alpha = 0.50f),
+                                        NovaRedGlow.copy(alpha = 0.24f),
+                                        Color.White.copy(alpha = 0.16f),
+                                        NovaRedPrimary.copy(alpha = 0.28f)
                                     )
                                 ),
-                                startAngle = 205f,
-                                sweepAngle = 130f,
-                                useCenter = false,
-                                topLeft = Offset(inset, inset),
-                                size = Size(size.width - inset * 2f, size.height - inset * 2f),
-                                style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round)
+                                shape = capsuleShape
                             )
-                        }
-                        .border(
-                            width = 0.95.dp,
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.54f),
-                                    NovaRedGlow.copy(alpha = 0.34f),
-                                    Color.White.copy(alpha = 0.14f),
-                                    NovaRedSecondary.copy(alpha = 0.42f)
-                                )
-                            ),
-                            shape = CircleShape
-                        )
-                )
+                    )
+                }
 
                 // Gesture overlay preserving exact tap & continuous horizontal finger-following swipe
                 Row(
