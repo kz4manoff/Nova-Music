@@ -46,6 +46,7 @@
 # Nova Wrapped Analytics & Models
 -keep class com.novamusic.player.wrapped.** { *; }
 
-# Firebase Cloud Messaging
+# Firebase Cloud Messaging & NOVA BROADCAST push client
+-keep class com.novamusic.player.push.** { *; }
 -keep class com.google.firebase.messaging.** { *; }
 -dontwarn com.google.firebase.**

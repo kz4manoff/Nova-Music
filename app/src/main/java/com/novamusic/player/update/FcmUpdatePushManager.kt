@@ -8,6 +8,10 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.RemoteMessage
 import com.novamusic.player.BuildConfig
 import com.novamusic.player.data.preferences.PreferencesRepository
+import com.novamusic.player.push.BroadcastDeviceRegistrar
+import com.novamusic.player.push.BroadcastNotificationParser
+import com.novamusic.player.push.BroadcastRegistrationResult
+import com.novamusic.player.push.NovaBroadcastNotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +26,10 @@ class FcmUpdatePushManager(
     context: Context,
     private val preferencesRepository: PreferencesRepository,
     private val notifier: UpdateNotifier = AndroidUpdateNotifier(context.applicationContext),
+    private val broadcastNotificationHelper: NovaBroadcastNotificationHelper =
+        NovaBroadcastNotificationHelper(context.applicationContext),
+    private val broadcastRegistrar: BroadcastDeviceRegistrar =
+        BroadcastDeviceRegistrar(context.applicationContext, preferencesRepository),
     private val installedVersionCode: Int = BuildConfig.VERSION_CODE
 ) {
     private val appContext = context.applicationContext
@@ -37,6 +45,7 @@ class FcmUpdatePushManager(
 
     suspend fun ensureRegistered(): Boolean = registrationLock.withLock {
         AndroidUpdateNotifier.ensureNotificationChannel(appContext)
+        NovaBroadcastNotificationHelper.ensureNotificationChannel(appContext)
         if (!isFirebaseInitialized()) {
             Log.i(
                 TAG,
@@ -59,6 +68,11 @@ class FcmUpdatePushManager(
             if (subscribed) {
                 preferencesRepository.saveFcmSubscribedTopic(PushUpdatePayload.UPDATES_TOPIC)
             }
+
+            if (!token.isNullOrBlank()) {
+                broadcastRegistrar.registerDeviceToken(token, force = false)
+            }
+
             !token.isNullOrBlank() && subscribed
         }.getOrElse { error ->
             Log.w(TAG, "FCM registration failed: ${error.message}")
@@ -66,67 +80,122 @@ class FcmUpdatePushManager(
         }
     }
 
+    suspend fun syncDeviceRegistration(force: Boolean = false): BroadcastRegistrationResult {
+        AndroidUpdateNotifier.ensureNotificationChannel(appContext)
+        NovaBroadcastNotificationHelper.ensureNotificationChannel(appContext)
+        val cachedToken = preferencesRepository.appSettings.first().fcmToken
+        val resolvedToken = if (cachedToken.isNotBlank()) {
+            cachedToken
+        } else if (isFirebaseInitialized()) {
+            runCatching { FirebaseMessaging.getInstance().token.awaitResultOrNull() }.getOrNull().orEmpty()
+                .also { fetched ->
+                    if (fetched.isNotBlank()) {
+                        preferencesRepository.saveFcmToken(fetched)
+                    }
+                }
+        } else {
+            ""
+        }
+
+        return if (resolvedToken.isNotBlank()) {
+            broadcastRegistrar.registerDeviceToken(resolvedToken, force = force)
+        } else {
+            BroadcastRegistrationResult.NotConfigured(
+                "FCM token is not available yet (ensure Google Play services and google-services.json are configured)."
+            )
+        }
+    }
+
     suspend fun onNewToken(token: String) = registrationLock.withLock {
         AndroidUpdateNotifier.ensureNotificationChannel(appContext)
+        NovaBroadcastNotificationHelper.ensureNotificationChannel(appContext)
         if (token.isNotBlank()) {
             preferencesRepository.saveFcmToken(token)
         }
-        if (!isFirebaseInitialized()) return@withLock
-
-        runCatching {
-            val subscribed = FirebaseMessaging.getInstance()
-                .subscribeToTopic(PushUpdatePayload.UPDATES_TOPIC)
-                .awaitCompletionSuccess()
-            if (subscribed) {
-                preferencesRepository.saveFcmSubscribedTopic(PushUpdatePayload.UPDATES_TOPIC)
+        if (isFirebaseInitialized()) {
+            runCatching {
+                val subscribed = FirebaseMessaging.getInstance()
+                    .subscribeToTopic(PushUpdatePayload.UPDATES_TOPIC)
+                    .awaitCompletionSuccess()
+                if (subscribed) {
+                    preferencesRepository.saveFcmSubscribedTopic(PushUpdatePayload.UPDATES_TOPIC)
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to re-subscribe rotated FCM token: ${error.message}")
             }
-        }.onFailure { error ->
-            Log.w(TAG, "Failed to re-subscribe rotated FCM token: ${error.message}")
+        }
+        if (token.isNotBlank()) {
+            broadcastRegistrar.registerDeviceToken(token, force = true)
         }
     }
 
     suspend fun handleRemoteMessage(remoteMessage: RemoteMessage): PushDedupeDecision? {
         AndroidUpdateNotifier.ensureNotificationChannel(appContext)
-        val payload = PushUpdatePayload.parseFcmDataPayload(
+        NovaBroadcastNotificationHelper.ensureNotificationChannel(appContext)
+
+        val updatePayload = PushUpdatePayload.parseFcmDataPayload(
             data = remoteMessage.data,
             messageId = remoteMessage.messageId,
             notificationTitle = remoteMessage.notification?.title,
             notificationBody = remoteMessage.notification?.body
-        ) ?: return null
+        )
 
-        return messageLock.withLock {
-            val settings = preferencesRepository.appSettings.first()
-            val decision = PushUpdatePayload.evaluateIncomingPush(
-                payload = payload,
-                installedVersionCode = installedVersionCode,
-                lastNotifiedVersionCode = settings.lastNotifiedUpdateVersionCode,
-                dismissedNotificationVersionCode = settings.dismissedUpdateNotificationVersionCode,
-                lastFcmMessageId = settings.lastFcmMessageId
-            )
+        if (updatePayload != null) {
+            return messageLock.withLock {
+                val settings = preferencesRepository.appSettings.first()
+                val decision = PushUpdatePayload.evaluateIncomingPush(
+                    payload = updatePayload,
+                    installedVersionCode = installedVersionCode,
+                    lastNotifiedVersionCode = settings.lastNotifiedUpdateVersionCode,
+                    dismissedNotificationVersionCode = settings.dismissedUpdateNotificationVersionCode,
+                    lastFcmMessageId = settings.lastFcmMessageId
+                )
 
-            when (decision) {
-                is PushDedupeDecision.Suppress -> {
-                    Log.d(TAG, "Suppressed duplicate/stale update push: ${decision.reason}")
-                }
-                is PushDedupeDecision.ShowNotification -> {
-                    if (notifier.canPostNotifications()) {
-                        val posted = notifier.showUpdateAvailableNotification(decision.config)
-                        if (posted) {
-                            preferencesRepository.recordUpdateNotificationPosted(
-                                versionCode = decision.config.versionCode,
-                                messageId = decision.payload.messageId
+                when (decision) {
+                    is PushDedupeDecision.Suppress -> {
+                        Log.d(TAG, "Suppressed duplicate/stale update push: ${decision.reason}")
+                    }
+                    is PushDedupeDecision.ShowNotification -> {
+                        if (notifier.canPostNotifications()) {
+                            val posted = notifier.showUpdateAvailableNotification(decision.config)
+                            if (posted) {
+                                preferencesRepository.recordUpdateNotificationPosted(
+                                    versionCode = decision.config.versionCode,
+                                    messageId = decision.payload.messageId
+                                )
+                            }
+                        } else {
+                            Log.i(
+                                TAG,
+                                "Update push v${decision.payload.versionName} received, but POST_NOTIFICATIONS is denied."
                             )
                         }
-                    } else {
-                        Log.i(
-                            TAG,
-                            "Update push v${decision.payload.versionName} received, but POST_NOTIFICATIONS is denied."
-                        )
                     }
                 }
+                decision
             }
-            decision
         }
+
+        val broadcastPayload = BroadcastNotificationParser.parseRemotePayload(
+            data = remoteMessage.data,
+            messageId = remoteMessage.messageId,
+            notificationTitle = remoteMessage.notification?.title,
+            notificationBody = remoteMessage.notification?.body,
+            notificationImageUrl = remoteMessage.notification?.imageUrl?.toString()
+        ) ?: return null
+
+        messageLock.withLock {
+            val lastBroadcastId = preferencesRepository.appSettings.first().lastBroadcastMessageId
+            if (!broadcastPayload.dedupeKey.isNullOrBlank() && broadcastPayload.dedupeKey == lastBroadcastId) {
+                Log.d(TAG, "Suppressed duplicate broadcast notification ${broadcastPayload.dedupeKey}")
+                return null
+            }
+            val posted = broadcastNotificationHelper.showBroadcastNotification(broadcastPayload)
+            if (posted && !broadcastPayload.dedupeKey.isNullOrBlank()) {
+                preferencesRepository.saveLastBroadcastMessageId(broadcastPayload.dedupeKey)
+            }
+        }
+        return null
     }
 
     private fun isFirebaseInitialized(): Boolean {

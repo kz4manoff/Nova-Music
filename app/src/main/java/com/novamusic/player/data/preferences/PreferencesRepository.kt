@@ -79,7 +79,13 @@ data class AppSettings(
     val fcmToken: String = "",
     val fcmSubscribedTopic: String = "",
     val lastFcmMessageId: String = "",
-    val hasPromptedNotificationPermission: Boolean = false
+    val hasPromptedNotificationPermission: Boolean = false,
+    val deviceInstallationId: String = "",
+    val lastSyncedFcmToken: String = "",
+    val lastSyncedBroadcastUrl: String = "",
+    val lastSyncedAppVersionCode: Int = 0,
+    val lastBackendSyncMs: Long = 0L,
+    val lastBroadcastMessageId: String = ""
 )
 
 data class PlaybackPersistenceState(
@@ -169,6 +175,12 @@ class PreferencesRepository(private val context: Context) {
         val FCM_SUBSCRIBED_TOPIC = stringPreferencesKey("fcm_subscribed_topic")
         val LAST_FCM_MESSAGE_ID = stringPreferencesKey("last_fcm_message_id")
         val HAS_PROMPTED_NOTIFICATION_PERMISSION = booleanPreferencesKey("has_prompted_notification_permission")
+        val DEVICE_INSTALLATION_ID = stringPreferencesKey("device_installation_id")
+        val LAST_SYNCED_FCM_TOKEN = stringPreferencesKey("last_synced_fcm_token")
+        val LAST_SYNCED_BROADCAST_URL = stringPreferencesKey("last_synced_broadcast_url")
+        val LAST_SYNCED_APP_VERSION_CODE = intPreferencesKey("last_synced_app_version_code")
+        val LAST_BACKEND_SYNC_MS = longPreferencesKey("last_backend_sync_ms")
+        val LAST_BROADCAST_MESSAGE_ID = stringPreferencesKey("last_broadcast_message_id")
     }
 
     val appSettings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -229,7 +241,13 @@ class PreferencesRepository(private val context: Context) {
             fcmToken = prefs[Keys.FCM_TOKEN] ?: "",
             fcmSubscribedTopic = prefs[Keys.FCM_SUBSCRIBED_TOPIC] ?: "",
             lastFcmMessageId = prefs[Keys.LAST_FCM_MESSAGE_ID] ?: "",
-            hasPromptedNotificationPermission = prefs[Keys.HAS_PROMPTED_NOTIFICATION_PERMISSION] ?: false
+            hasPromptedNotificationPermission = prefs[Keys.HAS_PROMPTED_NOTIFICATION_PERMISSION] ?: false,
+            deviceInstallationId = prefs[Keys.DEVICE_INSTALLATION_ID] ?: "",
+            lastSyncedFcmToken = prefs[Keys.LAST_SYNCED_FCM_TOKEN] ?: "",
+            lastSyncedBroadcastUrl = prefs[Keys.LAST_SYNCED_BROADCAST_URL] ?: "",
+            lastSyncedAppVersionCode = prefs[Keys.LAST_SYNCED_APP_VERSION_CODE] ?: 0,
+            lastBackendSyncMs = prefs[Keys.LAST_BACKEND_SYNC_MS] ?: 0L,
+            lastBroadcastMessageId = prefs[Keys.LAST_BROADCAST_MESSAGE_ID] ?: ""
         )
     }
 
@@ -545,5 +563,39 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun setHasPromptedNotificationPermission(prompted: Boolean) {
         context.dataStore.edit { it[Keys.HAS_PROMPTED_NOTIFICATION_PERMISSION] = prompted }
+    }
+
+    suspend fun getOrCreateDeviceInstallationId(): String {
+        var resolved = ""
+        context.dataStore.edit { prefs ->
+            val existing = prefs[Keys.DEVICE_INSTALLATION_ID]?.trim().orEmpty()
+            if (existing.isNotEmpty()) {
+                resolved = existing
+            } else {
+                val created = java.util.UUID.randomUUID().toString()
+                prefs[Keys.DEVICE_INSTALLATION_ID] = created
+                resolved = created
+            }
+        }
+        return resolved
+    }
+
+    suspend fun recordBackendDeviceSynced(
+        token: String,
+        endpointUrl: String,
+        versionCode: Int,
+        syncedAtMs: Long
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.LAST_SYNCED_FCM_TOKEN] = token
+            prefs[Keys.LAST_SYNCED_BROADCAST_URL] = endpointUrl
+            prefs[Keys.LAST_SYNCED_APP_VERSION_CODE] = versionCode
+            prefs[Keys.LAST_BACKEND_SYNC_MS] = syncedAtMs
+        }
+    }
+
+    suspend fun saveLastBroadcastMessageId(messageId: String) {
+        if (messageId.isBlank()) return
+        context.dataStore.edit { it[Keys.LAST_BROADCAST_MESSAGE_ID] = messageId.trim() }
     }
 }

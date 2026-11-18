@@ -66,6 +66,16 @@
                 <action android:name="com.novamusic.player.ACTION_OPEN_UPDATE_DETAILS" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.novamusic.player.ACTION_OPEN_BROADCAST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="novamusic" />
+            </intent-filter>
         </activity>
 
         <!-- FCM Default Notification Channel, Branding Icon & Accent Color -->

@@ -41,6 +41,14 @@ val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?
     ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }
     ?: "https://nova-website-1tg.pages.dev/update.json"
 
+val resolvedBroadcastRegisterUrl = (findProperty("NOVA_BROADCAST_REGISTER_URL") as String?)?.trim()
+    ?: System.getenv("NOVA_BROADCAST_REGISTER_URL")?.trim()
+    ?: ""
+
+val resolvedBroadcastClientKey = (findProperty("NOVA_BROADCAST_CLIENT_KEY") as String?)?.trim()
+    ?: System.getenv("NOVA_BROADCAST_CLIENT_KEY")?.trim()
+    ?: ""
+
 base {
     archivesName.set("NOVA-MUSIC-v$resolvedVersionName")
 }
@@ -56,7 +64,9 @@ android {
         versionCode = resolvedVersionCode
         versionName = resolvedVersionName
 
-        buildConfigField("String", "UPDATE_CONFIG_URL", "\"$resolvedUpdateConfigUrl\"")
+        buildConfigField("String", "UPDATE_CONFIG_URL", "\"${resolvedUpdateConfigUrl.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "BROADCAST_REGISTER_URL", "\"${resolvedBroadcastRegisterUrl.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "BROADCAST_CLIENT_KEY", "\"${resolvedBroadcastClientKey.replace("\"", "\\\"")}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

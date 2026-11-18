@@ -116,7 +116,9 @@ import com.novamusic.player.update.UpdateUiState
 fun NovaMainAppShell(
     container: AppContainer,
     openNowPlayingTrigger: Int = 0,
-    openUpdatesTrigger: Int = 0
+    openUpdatesTrigger: Int = 0,
+    deepLinkRoute: String? = null,
+    deepLinkTrigger: Int = 0
 ) {
     val navController = rememberNavController()
     val factory = remember(container) { NovaViewModelFactory(container) }
@@ -179,6 +181,47 @@ fun NovaMainAppShell(
     LaunchedEffect(openUpdatesTrigger) {
         if (openUpdatesTrigger > 0) {
             openUpdatesDestination()
+        }
+    }
+
+    LaunchedEffect(deepLinkTrigger, deepLinkRoute) {
+        if (deepLinkTrigger > 0 && !deepLinkRoute.isNullOrBlank()) {
+            showNowPlaying = false
+            lyricsTargetSong = null
+            showAudioOutputSheet = false
+            when {
+                deepLinkRoute == NovaDestinations.SETTINGS_UPDATES -> openUpdatesDestination()
+                deepLinkRoute in setOf(
+                    NovaDestinations.HOME,
+                    NovaDestinations.LIBRARY,
+                    NovaDestinations.SEARCH,
+                    NovaDestinations.PLAYLISTS
+                ) -> {
+                    navController.navigate(deepLinkRoute) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+                deepLinkRoute.startsWith("${NovaDestinations.SETTINGS}/") -> {
+                    val routeNow = navController.currentBackStackEntry?.destination?.route
+                    if (routeNow != NovaDestinations.SETTINGS && routeNow != deepLinkRoute) {
+                        navController.navigate(NovaDestinations.SETTINGS) {
+                            launchSingleTop = true
+                        }
+                    }
+                    navController.navigate(deepLinkRoute) {
+                        launchSingleTop = true
+                    }
+                }
+                else -> {
+                    navController.navigate(deepLinkRoute) {
+                        launchSingleTop = true
+                    }
+                }
+            }
         }
     }
 

@@ -424,6 +424,8 @@ jobs:
           NOVA_KEY_PASSWORD: ${{ secrets.NOVA_KEY_PASSWORD }}
           NOVA_VERSION_NAME: ${{ steps.version.outputs.version_name }}
           NOVA_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          NOVA_BROADCAST_REGISTER_URL: ${{ secrets.NOVA_BROADCAST_REGISTER_URL }}
+          NOVA_BROADCAST_CLIENT_KEY: ${{ secrets.NOVA_BROADCAST_CLIENT_KEY }}
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Verify signed Release APK, metadata & SHA-256

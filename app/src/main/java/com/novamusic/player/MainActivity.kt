@@ -54,6 +54,8 @@ import com.novamusic.player.data.model.RescanInterval
 import com.novamusic.player.data.preferences.AppSettings
 import com.novamusic.player.navigation.NovaMainAppShell
 import com.novamusic.player.permissions.PermissionHelper
+import com.novamusic.player.push.BroadcastDeepLinkTarget
+import com.novamusic.player.push.BroadcastNotificationParser
 import com.novamusic.player.ui.components.LiquidGlassBackdrop
 import com.novamusic.player.ui.components.LiquidGlassButton
 import com.novamusic.player.ui.components.LiquidGlassSurface
@@ -76,6 +78,8 @@ class MainActivity : AppCompatActivity() {
     private var hasAudioPermissionState by mutableStateOf(false)
     private var openNowPlayingTrigger by mutableIntStateOf(0)
     private var openUpdatesTrigger by mutableIntStateOf(0)
+    private var deepLinkRouteState by mutableStateOf<String?>(null)
+    private var deepLinkTrigger by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -177,7 +181,9 @@ class MainActivity : AppCompatActivity() {
                     NovaMainAppShell(
                         container = container,
                         openNowPlayingTrigger = openNowPlayingTrigger,
-                        openUpdatesTrigger = openUpdatesTrigger
+                        openUpdatesTrigger = openUpdatesTrigger,
+                        deepLinkRoute = deepLinkRouteState,
+                        deepLinkTrigger = deepLinkTrigger
                     )
                 } else {
                     LaunchedEffect(Unit) {
@@ -250,6 +256,23 @@ class MainActivity : AppCompatActivity() {
             openUpdatesTrigger++
             container.updateManager.onUpdateNotificationOpened(updateNavData.remoteVersionCode)
             PushUpdatePayload.clearConsumedUpdateExtras(intent, EXTRA_OPEN_UPDATES)
+        } else {
+            val rawDeepLink = BroadcastNotificationParser.extractDeepLinkFromIntent(intent)
+            if (rawDeepLink != null) {
+                when (val target = BroadcastNotificationParser.resolveDeepLinkTarget(rawDeepLink)) {
+                    is BroadcastDeepLinkTarget.InAppRoute -> {
+                        deepLinkRouteState = target.route
+                        deepLinkTrigger++
+                    }
+                    is BroadcastDeepLinkTarget.ExternalHttps -> {
+                        runCatching {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target.url)))
+                        }
+                    }
+                    BroadcastDeepLinkTarget.OpenAppHome, null -> Unit
+                }
+                BroadcastNotificationParser.clearConsumedDeepLinkExtras(intent)
+            }
         }
     }
 
