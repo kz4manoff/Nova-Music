@@ -367,8 +367,8 @@ fun NotificationsSettingsPage(
                     NovaSettingsDivider()
                     NovaActionSettingRow(
                         icon = Icons.Rounded.BugReport,
-                        title = "Developer FCM Diagnostics",
-                        subtitle = "Inspect token, HTTP response, live registration logs & force re-sync",
+                        title = "NOVA Notifications Diagnostics",
+                        subtitle = "Inspect Firebase status, FCM token, backend connection & retry registration",
                         trailingText = if (fcmDiag.lastBackendHttpCode > 0) "HTTP ${fcmDiag.lastBackendHttpCode}" else "Open",
                         onClick = onOpenFcmDiagnostics
                     )

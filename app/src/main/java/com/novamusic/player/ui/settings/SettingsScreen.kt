@@ -322,8 +322,8 @@ fun SettingsScreen(
                     NovaSettingsDivider()
                     NovaSettingsCategoryRow(
                         icon = Icons.Rounded.BugReport,
-                        title = "FCM & Broadcast Diagnostics",
-                        description = "Firebase init, push token status, HTTP sync logs & manual device sync",
+                        title = "NOVA Notifications Diagnostics",
+                        description = "Firebase status, notification permission, FCM token & backend registration",
                         statusBadge = if (fcmDiagnostics.isRegisteredConfirmed) "Registered" else fcmDiagnostics.registrationStatus,
                         highlightIcon = !fcmDiagnostics.isRegisteredConfirmed,
                         onClick = onOpenFcmDiagnostics

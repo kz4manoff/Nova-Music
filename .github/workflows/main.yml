@@ -402,9 +402,17 @@ jobs:
           decoded = raw if raw.startswith("{") else base64.b64decode(raw).decode("utf-8")
           parsed = json.loads(decoded)
           assert "project_info" in parsed and "client" in parsed, "Invalid google-services.json structure."
+          project_id = (parsed.get("project_info") or {}).get("project_id", "unknown")
+          packages = [
+              ((c.get("client_info") or {}).get("android_client_info") or {}).get("package_name")
+              for c in (parsed.get("client") or [])
+          ]
+          assert "com.novamusic.player" in packages, (
+              f"google-services.json does not contain Android package com.novamusic.player (found: {packages})."
+          )
           with open("app/google-services.json", "w", encoding="utf-8") as f:
               f.write(decoded)
-          print("Decoded app/google-services.json for FCM build.")
+          print(f"Decoded app/google-services.json for project_id={project_id} (packages={packages}).")
           PYEOF
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else

@@ -122,21 +122,21 @@ fun FcmDiagnosticsPage(
     val statusColor = if (diag.isRegisteredConfirmed) accent else NovaRedPrimary
 
     NovaSettingsSubpageScaffold(
-        title = "FCM & Broadcast Diagnostics",
-        subtitle = "Firebase initialization, token sync & NOVA_DB registration",
+        title = "NOVA Notifications Diagnostics",
+        subtitle = "Firebase status, token retrieval & D1 device sync",
         onBack = onBack,
         bottomContentPadding = bottomContentPadding,
         trailingActions = {
             LiquidGlassIconButton(
                 icon = Icons.Rounded.Refresh,
-                contentDescription = "Re-sync FCM device registration",
+                contentDescription = "Retry Device Registration",
                 size = 40.dp,
                 iconSize = 19.dp,
                 onClick = { viewModel.syncFcmDeviceRegistration(force = true) }
             )
         }
     ) {
-        // Summary & Manual Sync Hero Card
+        // Summary & Manual Retry Hero Card
         item(key = "fcm_diag_summary") {
             Column(
                 modifier = Modifier
@@ -182,15 +182,15 @@ fun FcmDiagnosticsPage(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = when {
-                                    diag.isSyncing -> "Syncing with NOVA BROADCAST..."
-                                    diag.isRegisteredConfirmed -> "Device Registered in NOVA_DB"
+                                    diag.isSyncing -> "Registering with NOVA BROADCAST..."
+                                    diag.isRegisteredConfirmed -> "Device Registered"
                                     else -> "Device Not Registered Yet"
                                 },
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Status: ${diag.registrationStatus} • v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                text = "Device Status: ${diag.registrationStatus} • v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                                 style = NovaMonoTelemetry.copy(fontSize = 11.sp),
                                 color = statusColor
                             )
@@ -219,7 +219,7 @@ fun FcmDiagnosticsPage(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = if (diag.isSyncing) "Registering Device..." else "Register / Re-Sync Device Now",
+                                text = if (diag.isSyncing) "Registering Device..." else "Retry Device Registration",
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
@@ -230,7 +230,7 @@ fun FcmDiagnosticsPage(
             }
         }
 
-        // 1. Firebase Initialization
+        // 1. Firebase Status
         item(key = "fcm_diag_firebase") {
             Column(
                 modifier = Modifier
@@ -239,14 +239,19 @@ fun FcmDiagnosticsPage(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 NovaSectionHeader(
-                    title = "Firebase Initialization",
+                    title = "Firebase Status",
                     icon = Icons.Rounded.BugReport,
-                    trailingBadge = if (diag.firebaseInitialized) "Ready" else "Missing Config"
+                    trailingBadge = if (diag.firebaseInitialized) "Initialized" else "Missing Config"
                 )
                 NovaSettingsCard {
                     NovaInfoRow(
-                        label = "Firebase Init",
+                        label = "Firebase Status",
                         value = if (diag.firebaseInitialized) "Initialized" else "Not Initialized"
+                    )
+                    NovaSettingsDivider()
+                    NovaInfoRow(
+                        label = "google-services.json",
+                        value = if (diag.firebaseConfigBundled) "Bundled" else "Missing in APK"
                     )
                     NovaSettingsDivider()
                     NovaInfoRow(
@@ -268,7 +273,7 @@ fun FcmDiagnosticsPage(
             }
         }
 
-        // 2. Notification Permission
+        // 2. Notification Permission Status
         item(key = "fcm_diag_permission") {
             Column(
                 modifier = Modifier
@@ -277,7 +282,7 @@ fun FcmDiagnosticsPage(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 NovaSectionHeader(
-                    title = "Notification Permission",
+                    title = "Notification Permission Status",
                     icon = Icons.Rounded.Notifications,
                     trailingBadge = if (diag.notificationPermissionGranted) "Granted" else "Action Needed"
                 )
@@ -293,8 +298,8 @@ fun FcmDiagnosticsPage(
                     )
                     NovaSettingsDivider()
                     NovaInfoRow(
-                        label = "Broadcast Eligible",
-                        value = if (diag.notificationPermissionGranted) "Yes" else "No"
+                        label = "Notification Permission",
+                        value = if (diag.notificationPermissionGranted) "Enabled" else "Disabled"
                     )
                     NovaSettingsDivider()
                     NovaActionSettingRow(
@@ -305,7 +310,7 @@ fun FcmDiagnosticsPage(
                             "Open Android Notification Settings"
                         },
                         subtitle = if (diag.notificationPermissionGranted) {
-                            "Notification permission enabled for broadcast alerts"
+                            "Permission granted; device is eligible for NOVA BROADCAST push"
                         } else {
                             "Required on Android 13+ before NOVA BROADCAST marks this device active"
                         },
@@ -322,7 +327,7 @@ fun FcmDiagnosticsPage(
             }
         }
 
-        // 3. FCM Token Retrieval
+        // 3. FCM Token Retrieval Status
         item(key = "fcm_diag_token") {
             Column(
                 modifier = Modifier
@@ -331,12 +336,12 @@ fun FcmDiagnosticsPage(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 NovaSectionHeader(
-                    title = "FCM Token Retrieval",
+                    title = "FCM Token Retrieval Status",
                     icon = Icons.Rounded.Key,
                     trailingBadge = diag.fcmTokenStatus
                 )
                 NovaSettingsCard {
-                    NovaInfoRow("Token Status", diag.fcmTokenStatus)
+                    NovaInfoRow("FCM Token Retrieval", diag.fcmTokenStatus)
                     NovaSettingsDivider()
                     NovaInfoRow("Token Preview", diag.fcmTokenPreview)
                     NovaSettingsDivider()
@@ -372,7 +377,7 @@ fun FcmDiagnosticsPage(
             }
         }
 
-        // 4. Backend Registration & Response
+        // 4. Backend Connection, Device Registration & Last Response
         item(key = "fcm_diag_backend") {
             Column(
                 modifier = Modifier
@@ -381,11 +386,15 @@ fun FcmDiagnosticsPage(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 NovaSectionHeader(
-                    title = "Backend Registration & Response",
+                    title = "Backend & Device Registration",
                     icon = Icons.Rounded.CloudDone,
                     trailingBadge = if (diag.lastBackendHttpCode > 0) "HTTP ${diag.lastBackendHttpCode}" else null
                 )
                 NovaSettingsCard {
+                    NovaInfoRow("Backend Connection", diag.backendConnectionStatus)
+                    NovaSettingsDivider()
+                    NovaInfoRow("Device Registration", diag.registrationStatus)
+                    NovaSettingsDivider()
                     NovaInfoRow(
                         label = "Device ID",
                         value = diag.deviceId.takeIf { it.isNotBlank() }?.take(14)?.plus("...") ?: "Pending"
@@ -394,13 +403,6 @@ fun FcmDiagnosticsPage(
                     NovaInfoRow(
                         label = "API Endpoint",
                         value = diag.backendEndpointUrl.removePrefix("https://").ifBlank { "Not Configured" }
-                    )
-                    NovaSettingsDivider()
-                    NovaInfoRow("Registration Status", diag.registrationStatus)
-                    NovaSettingsDivider()
-                    NovaInfoRow(
-                        label = "Last HTTP Code",
-                        value = if (diag.lastBackendHttpCode > 0) "HTTP ${diag.lastBackendHttpCode}" else "None"
                     )
                     NovaSettingsDivider()
                     NovaInfoRow(
@@ -415,7 +417,7 @@ fun FcmDiagnosticsPage(
                     NovaSettingsDivider()
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Last Backend Response",
+                        text = "Last Registration Response",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -461,7 +463,7 @@ fun FcmDiagnosticsPage(
                         subtitle = "Includes Firebase state, permission, endpoint, response & logs",
                         trailingText = if (reportCopied) "Copied" else "Copy",
                         onClick = {
-                            copyPlainText(context, "NOVA FCM Diagnostics", buildDiagnosticReport(diag))
+                            copyPlainText(context, "NOVA Notifications Diagnostics", buildDiagnosticReport(diag))
                             reportCopied = true
                         }
                     )
@@ -478,7 +480,7 @@ fun FcmDiagnosticsPage(
                         SelectionContainer {
                             Text(
                                 text = if (diag.recentLogs.isEmpty()) {
-                                    "No session logs captured yet. Tap 'Register / Re-Sync Device Now' above to run live diagnostics."
+                                    "No session logs captured yet. Tap 'Retry Device Registration' above to run live diagnostics."
                                 } else {
                                     diag.recentLogs.asReversed().joinToString("\n")
                                 },
@@ -505,23 +507,24 @@ private fun copyPlainText(context: Context, label: String, text: String) {
 }
 
 private fun buildDiagnosticReport(diag: FcmDiagnosticsSnapshot): String = buildString {
-    appendLine("NOVA MUSIC FCM & BROADCAST DIAGNOSTICS")
+    appendLine("NOVA NOTIFICATIONS DIAGNOSTICS")
     appendLine("App: ${BuildConfig.APPLICATION_ID} v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-    appendLine("Firebase Initialized: ${diag.firebaseInitialized} (${diag.firebaseStatusDetail})")
+    appendLine("Firebase Status: ${diag.firebaseInitialized} (bundled=${diag.firebaseConfigBundled}, ${diag.firebaseStatusDetail})")
     appendLine("POST_NOTIFICATIONS Granted: ${diag.postNotificationsGranted}")
     appendLine("System Notifications Enabled: ${diag.systemNotificationsEnabled}")
-    appendLine("FCM Token Status: ${diag.fcmTokenStatus} (${diag.fcmTokenPreview})")
+    appendLine("FCM Token Retrieval: ${diag.fcmTokenStatus} (${diag.fcmTokenPreview})")
     if (diag.fcmTokenError.isNotBlank()) {
         appendLine("FCM Token Error: ${diag.fcmTokenError}")
     }
     appendLine("Topic Subscribed: ${diag.topicSubscribed.ifBlank { "none" }}")
     appendLine("Backend Endpoint: ${diag.backendEndpointUrl.ifBlank { "none" }}")
+    appendLine("Backend Connection: ${diag.backendConnectionStatus}")
     appendLine("Device ID: ${diag.deviceId.ifBlank { "none" }}")
-    appendLine("Registration Status: ${diag.registrationStatus} (confirmed=${diag.isRegisteredConfirmed})")
+    appendLine("Device Registration: ${diag.registrationStatus} (confirmed=${diag.isRegisteredConfirmed})")
     appendLine("Last HTTP Status: ${diag.lastBackendHttpCode}")
     appendLine("Last Attempt: ${formatDiagnosticTimestamp(diag.lastAttemptMs, "Never")}")
     appendLine("Last Successful Sync: ${formatDiagnosticTimestamp(diag.lastSuccessMs, "Never")}")
-    appendLine("Last Backend Response: ${diag.lastBackendResponse.ifBlank { "none" }}")
+    appendLine("Last Registration Response: ${diag.lastBackendResponse.ifBlank { "none" }}")
     appendLine("--- Logs ---")
     if (diag.recentLogs.isEmpty()) {
         appendLine("(none)")

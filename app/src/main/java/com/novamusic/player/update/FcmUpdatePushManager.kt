@@ -32,6 +32,7 @@ import kotlin.coroutines.resume
 
 data class FcmDiagnosticsSnapshot(
     val firebaseInitialized: Boolean = false,
+    val firebaseConfigBundled: Boolean = false,
     val firebaseStatusDetail: String = "Checking...",
     val firebaseProjectId: String = "",
     val postNotificationsGranted: Boolean = false,
@@ -43,6 +44,7 @@ data class FcmDiagnosticsSnapshot(
     val fcmTokenError: String = "",
     val topicSubscribed: String = "",
     val backendEndpointUrl: String = "",
+    val backendConnectionStatus: String = "Not Attempted",
     val deviceId: String = "",
     val registrationStatus: String = "NOT_ATTEMPTED",
     val isRegisteredConfirmed: Boolean = false,
@@ -186,20 +188,25 @@ class FcmUpdatePushManager(
                 )
                 preferencesRepository.saveFcmToken(token)
 
-                val (subscribed, topicError) = messaging.subscribeToTopic(PushUpdatePayload.UPDATES_TOPIC)
-                    .awaitCompletionOutcome()
-                if (subscribed) {
-                    preferencesRepository.saveFcmSubscribedTopic(PushUpdatePayload.UPDATES_TOPIC)
-                    appendLog("I", "Subscribed to FCM topic '${PushUpdatePayload.UPDATES_TOPIC}'.")
-                } else {
-                    appendLog(
-                        "W",
-                        "Topic subscribe '${PushUpdatePayload.UPDATES_TOPIC}' failed: ${topicError?.message ?: "unknown"}"
-                    )
-                }
-
                 val regResult = broadcastRegistrar.registerDeviceToken(token, force = false)
                 logRegistrationOutcome(regResult)
+
+                runCatching {
+                    val (subscribed, topicError) = messaging.subscribeToTopic(PushUpdatePayload.UPDATES_TOPIC)
+                        .awaitCompletionOutcome()
+                    if (subscribed) {
+                        preferencesRepository.saveFcmSubscribedTopic(PushUpdatePayload.UPDATES_TOPIC)
+                        appendLog("I", "Subscribed to FCM topic '${PushUpdatePayload.UPDATES_TOPIC}'.")
+                    } else {
+                        appendLog(
+                            "W",
+                            "Topic subscribe '${PushUpdatePayload.UPDATES_TOPIC}' failed: ${topicError?.message ?: "unknown"}"
+                        )
+                    }
+                }.onFailure { topicErr ->
+                    appendLog("W", "Topic subscribe '${PushUpdatePayload.UPDATES_TOPIC}' error: ${topicErr.message}")
+                }
+
                 regResult is BroadcastRegistrationResult.Success ||
                     regResult is BroadcastRegistrationResult.AlreadySynced
             }.getOrElse { error ->
@@ -454,18 +461,19 @@ class FcmUpdatePushManager(
     }
 
     private suspend fun publishDiagnostics(settings: AppSettings) {
+        val firebaseConfigBundled = hasBundledGoogleServicesConfig()
         val firebaseApp = resolveFirebaseApp()
         val firebaseInitialized = firebaseApp != null
         val projectId = firebaseApp?.options?.projectId.orEmpty()
         val appId = firebaseApp?.options?.applicationId.orEmpty()
-        val firebaseDetail = if (firebaseInitialized) {
-            buildString {
+        val firebaseDetail = when {
+            firebaseInitialized -> buildString {
                 append("Initialized")
                 if (projectId.isNotBlank()) append(" • project=$projectId")
                 if (appId.isNotBlank()) append(" • appId=${appId.take(18)}...")
             }
-        } else {
-            "Not initialized (app/google-services.json not bundled in APK)"
+            !firebaseConfigBundled -> "Not initialized (google_app_id missing — APK built without app/google-services.json)"
+            else -> "Not initialized (FirebaseApp.initializeApp returned null)"
         }
 
         val postGrant = PermissionHelper.hasPostNotificationsRuntimeGrant(appContext)
@@ -505,10 +513,29 @@ class FcmUpdatePushManager(
             else -> "NOT_ATTEMPTED"
         }
 
+        val backendConnectionStatus = when {
+            endpointUrl.isBlank() -> "Endpoint Not Configured"
+            settings.lastBroadcastRegHttpCode in 200..299 && confirmed ->
+                "Connected (HTTP ${settings.lastBroadcastRegHttpCode})"
+            settings.lastBroadcastRegHttpCode in 200..299 ->
+                "Responded HTTP ${settings.lastBroadcastRegHttpCode}"
+            settings.lastBroadcastRegHttpCode > 0 ->
+                "HTTP Error ${settings.lastBroadcastRegHttpCode}"
+            statusLabel == "RETRY_QUEUED" ->
+                "Connection Failed (Retrying)"
+            statusLabel == "NOT_ATTEMPTED" ||
+                statusLabel == "PERMISSION_DENIED" ||
+                statusLabel == "FIREBASE_NOT_INITIALIZED" ||
+                statusLabel == "TOKEN_FAILED" ||
+                statusLabel == "TOKEN_UNAVAILABLE" -> "Waiting for Firebase / Permission"
+            else -> "Not Connected"
+        }
+
         val snapshotLogs = synchronized(logLock) { logBuffer.toList() }
 
         _diagnosticsState.value = FcmDiagnosticsSnapshot(
             firebaseInitialized = firebaseInitialized,
+            firebaseConfigBundled = firebaseConfigBundled,
             firebaseStatusDetail = firebaseDetail,
             firebaseProjectId = projectId,
             postNotificationsGranted = postGrant,
@@ -520,6 +547,7 @@ class FcmUpdatePushManager(
             fcmTokenError = lastTokenErrorMessage,
             topicSubscribed = settings.fcmSubscribedTopic,
             backendEndpointUrl = endpointUrl,
+            backendConnectionStatus = backendConnectionStatus,
             deviceId = deviceId,
             registrationStatus = statusLabel,
             isRegisteredConfirmed = confirmed,
@@ -530,6 +558,12 @@ class FcmUpdatePushManager(
             isSyncing = isSyncingNow,
             recentLogs = snapshotLogs
         )
+    }
+
+    private fun hasBundledGoogleServicesConfig(): Boolean {
+        val resId = appContext.resources.getIdentifier("google_app_id", "string", appContext.packageName)
+        if (resId == 0) return false
+        return runCatching { appContext.getString(resId).isNotBlank() }.getOrDefault(false)
     }
 
     private fun resolveFirebaseApp(): FirebaseApp? {
