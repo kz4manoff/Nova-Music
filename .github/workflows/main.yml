@@ -388,37 +388,117 @@ jobs:
           JAVA
           java "${VERIFY_DIR}/VerifyKeystore.java"
 
-      - name: Decode Firebase google-services.json (if configured)
+      - name: Resolve and validate Firebase google-services.json
         id: firebase_config
         shell: bash
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           set -euo pipefail
-          if [[ -n "${GOOGLE_SERVICES_JSON_BASE64}" ]]; then
-            python3 - <<'PYEOF'
-          import base64, json, os, sys
-          raw = os.environ["GOOGLE_SERVICES_JSON_BASE64"].strip()
-          decoded = raw if raw.startswith("{") else base64.b64decode(raw).decode("utf-8")
-          parsed = json.loads(decoded)
-          assert "project_info" in parsed and "client" in parsed, "Invalid google-services.json structure."
-          project_id = (parsed.get("project_info") or {}).get("project_id", "unknown")
+          python3 - <<'PYEOF'
+          import base64
+          import binascii
+          import json
+          import os
+          import re
+          import sys
+
+          target_path = os.path.join("app", "google-services.json")
+          output_path = os.environ["GITHUB_OUTPUT"]
+
+          def fail(msg: str) -> None:
+              print(f"::error::{msg}", file=sys.stderr)
+              sys.exit(1)
+
+          def write_output(key: str, val: str) -> None:
+              with open(output_path, "a", encoding="utf-8") as out:
+                  out.write(f"{key}={val}\n")
+
+          def decode_secret_json(raw_secret: str) -> str:
+              s = raw_secret.strip()
+              if s.startswith("{"):
+                  return s
+              compact = re.sub(r"\s+", "", s)
+              if not compact:
+                  fail("GOOGLE_SERVICES_JSON_BASE64 secret is empty.")
+              if len(compact) % 4 != 0:
+                  compact += "=" * (4 - (len(compact) % 4))
+              try:
+                  return base64.b64decode(compact, validate=True).decode("utf-8")
+              except (binascii.Error, UnicodeDecodeError) as exc:
+                  fail(f"GOOGLE_SERVICES_JSON_BASE64 is neither raw JSON nor valid UTF-8 Base64 ({exc}).")
+                  return ""
+
+          def parse_and_validate(raw_text: str, source_label: str) -> dict:
+              try:
+                  parsed = json.loads(raw_text)
+              except json.JSONDecodeError as exc:
+                  fail(f"{source_label} is not valid JSON ({exc}).")
+                  return {}
+              if not isinstance(parsed, dict):
+                  fail(f"{source_label} must be a JSON object.")
+              project_info = parsed.get("project_info")
+              clients = parsed.get("client")
+              if not isinstance(project_info, dict) or not str(project_info.get("project_id") or "").strip():
+                  fail(f"{source_label} is missing project_info.project_id.")
+              if not isinstance(clients, list) or len(clients) == 0:
+                  fail(f"{source_label} contains no Firebase Android client entries.")
+              return parsed
+
+          created_from_secret = False
+          source_label = "app/google-services.json"
+
+          if os.path.isfile(target_path):
+              with open(target_path, "r", encoding="utf-8") as f:
+                  raw_text = f.read()
+              if not raw_text.strip():
+                  fail("app/google-services.json exists in the repository but is empty.")
+              parsed = parse_and_validate(raw_text, "app/google-services.json")
+              print("Using existing app/google-services.json from repository directly (ignoring secret override).")
+          else:
+              secret_raw = (os.environ.get("GOOGLE_SERVICES_JSON_BASE64") or "").strip()
+              if not secret_raw:
+                  fail(
+                      "Firebase configuration is missing: app/google-services.json does not exist in the repository "
+                      "and GOOGLE_SERVICES_JSON_BASE64 secret is empty. Commit a valid app/google-services.json or set GOOGLE_SERVICES_JSON_BASE64."
+                  )
+              decoded_text = decode_secret_json(secret_raw)
+              parsed = parse_and_validate(decoded_text, "GOOGLE_SERVICES_JSON_BASE64")
+              with open(target_path, "w", encoding="utf-8") as f:
+                  f.write(decoded_text)
+              created_from_secret = True
+              source_label = "GOOGLE_SERVICES_JSON_BASE64"
+              print("Wrote app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 fallback secret.")
+
+          project_id = str(parsed["project_info"]["project_id"]).strip()
           packages = [
               ((c.get("client_info") or {}).get("android_client_info") or {}).get("package_name")
-              for c in (parsed.get("client") or [])
+              for c in parsed["client"]
+              if isinstance(c, dict)
           ]
-          assert "com.novamusic.player" in packages, (
-              f"google-services.json does not contain Android package com.novamusic.player (found: {packages})."
+
+          if "com.novamusic.player" not in packages:
+              fail(
+                  f"{source_label} (Firebase project '{project_id}') does not contain required Release Android package "
+                  f"'com.novamusic.player' (found clients: {packages}). Download the google-services.json from Firebase Console "
+                  f"(project '{project_id}') that includes the 'com.novamusic.player' Android app before building Release."
+              )
+
+          has_debug = "com.novamusic.player.debug" in packages
+          print(
+              f"Validated Firebase config for project_id={project_id} "
+              f"(packages={packages}, release_ready=true, debug_client_present={str(has_debug).lower()})."
           )
-          with open("app/google-services.json", "w", encoding="utf-8") as f:
-              f.write(decoded)
-          print(f"Decoded app/google-services.json for project_id={project_id} (packages={packages}).")
+          if not has_debug:
+              print(
+                  "::warning::google-services.json only lists 'com.novamusic.player' (no 'com.novamusic.player.debug'). "
+                  "Release FCM is enabled; processDebugGoogleServices will be skipped during debug unit tests."
+              )
+
+          write_output("ready", "true")
+          write_output("created_from_secret", "true" if created_from_secret else "false")
+          write_output("project_id", project_id)
           PYEOF
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::GOOGLE_SERVICES_JSON_BASE64 secret is not configured. Building APK without bundled google-services.json; real FCM delivery requires app/google-services.json."
-          fi
 
       - name: Run Android Unit Tests
         run: ./gradlew testDebugUnitTest --stacktrace
@@ -521,10 +601,16 @@ jobs:
             echo "- **SHA-256**: \`${SHA256}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Cleanup keystore and Firebase config from runner
+      - name: Cleanup temporary keystore and secret config from runner
         if: always()
         shell: bash
-        run: rm -f "${GITHUB_WORKSPACE}/nova-release.jks" "${GITHUB_WORKSPACE}/app/google-services.json"
+        env:
+          CREATED_FIREBASE_FROM_SECRET: ${{ steps.firebase_config.outputs.created_from_secret }}
+        run: |
+          rm -f "${GITHUB_WORKSPACE}/nova-release.jks"
+          if [[ "${CREATED_FIREBASE_FROM_SECRET:-false}" == "true" ]]; then
+            rm -f "${GITHUB_WORKSPACE}/app/google-services.json"
+          fi
 
       - name: Upload signed Release APK artifact
         if: steps.signing.outputs.ready == 'true'

@@ -31,11 +31,11 @@ val hasReleaseSigning = !releaseStorePath.isNullOrBlank() &&
 
 val resolvedVersionCode = (findProperty("NOVA_VERSION_CODE") as String?)?.toIntOrNull()
     ?: System.getenv("NOVA_VERSION_CODE")?.toIntOrNull()
-    ?: 29
+    ?: 30
 
 val resolvedVersionName = (findProperty("NOVA_VERSION_NAME") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_VERSION_NAME")?.takeIf { it.isNotBlank() }
-    ?: "1.2.9"
+    ?: "1.3.0"
 
 val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }
@@ -183,6 +183,19 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 }
 
-if (file("google-services.json").exists()) {
+val googleServicesFile = file("google-services.json")
+val debugGoogleServicesFile = file("src/debug/google-services.json")
+if (googleServicesFile.exists() || debugGoogleServicesFile.exists()) {
     apply(plugin = "com.google.gms.google-services")
+    val hasDebugClient = debugGoogleServicesFile.exists() ||
+        Regex("\"package_name\"\\s*:\\s*\"com\\.novamusic\\.player\\.debug\"")
+            .containsMatchIn(googleServicesFile.takeIf { it.exists() }?.readText().orEmpty())
+    if (!hasDebugClient) {
+        logger.lifecycle(
+            "google-services.json does not define com.novamusic.player.debug; disabling processDebugGoogleServices so debug tests succeed while release uses com.novamusic.player."
+        )
+        tasks.matching { it.name == "processDebugGoogleServices" }.configureEach {
+            enabled = false
+        }
+    }
 }
