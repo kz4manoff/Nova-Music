@@ -98,6 +98,7 @@ import com.novamusic.player.ui.settings.AppUpdatesSettingsPage
 import com.novamusic.player.ui.settings.AppearanceSettingsPage
 import com.novamusic.player.ui.settings.AudioEqualizerSettingsPage
 import com.novamusic.player.ui.settings.DownloadsSettingsPage
+import com.novamusic.player.ui.settings.FcmDiagnosticsPage
 import com.novamusic.player.ui.settings.HeadphonesSettingsPage
 import com.novamusic.player.ui.settings.LibraryManagementSettingsPage
 import com.novamusic.player.ui.settings.NotificationsSettingsPage
@@ -575,6 +576,7 @@ fun NovaMainAppShell(
                             onOpenAudioEqualizer = { navController.navigate(NovaDestinations.SETTINGS_EQUALIZER) },
                             onOpenHeadphones = { navController.navigate(NovaDestinations.SETTINGS_HEADPHONES) },
                             onOpenNotifications = { navController.navigate(NovaDestinations.SETTINGS_NOTIFICATIONS) },
+                            onOpenFcmDiagnostics = { navController.navigate(NovaDestinations.SETTINGS_FCM_DIAGNOSTICS) },
                             onOpenLibraryManagement = { navController.navigate(NovaDestinations.SETTINGS_LIBRARY) },
                             onOpenDownloads = { navController.navigate(NovaDestinations.SETTINGS_DOWNLOADS) },
                             onOpenStorage = { navController.navigate(NovaDestinations.SETTINGS_STORAGE) },
@@ -621,6 +623,15 @@ fun NovaMainAppShell(
 
                     composable(NovaDestinations.SETTINGS_NOTIFICATIONS) {
                         NotificationsSettingsPage(
+                            viewModel = settingsViewModel,
+                            onBack = { navController.popBackStack() },
+                            onOpenFcmDiagnostics = { navController.navigate(NovaDestinations.SETTINGS_FCM_DIAGNOSTICS) },
+                            bottomContentPadding = miniPlayerHeight
+                        )
+                    }
+
+                    composable(NovaDestinations.SETTINGS_FCM_DIAGNOSTICS) {
+                        FcmDiagnosticsPage(
                             viewModel = settingsViewModel,
                             onBack = { navController.popBackStack() },
                             bottomContentPadding = miniPlayerHeight

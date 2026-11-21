@@ -13,7 +13,10 @@ class BroadcastPushTest {
         var deviceId: String = "device-uuid-001",
         var syncedToken: String = "",
         var syncedUrl: String = "",
-        var syncedVersionCode: Int = 0
+        var syncedVersionCode: Int = 0,
+        var lastAttemptStatus: String = "",
+        var lastAttemptHttpCode: Int = 0,
+        var lastAttemptResponse: String = ""
     ) : BroadcastRegistrationStore {
         override suspend fun getOrCreateDeviceId(): String = deviceId
         override suspend fun getLastSyncedFcmToken(): String = syncedToken
@@ -29,6 +32,17 @@ class BroadcastPushTest {
             syncedToken = token
             syncedUrl = endpointUrl
             syncedVersionCode = versionCode
+        }
+
+        override suspend fun recordAttempt(
+            statusLabel: String,
+            httpCode: Int,
+            responsePreview: String,
+            attemptAtMs: Long
+        ) {
+            lastAttemptStatus = statusLabel
+            lastAttemptHttpCode = httpCode
+            lastAttemptResponse = responsePreview
         }
     }
 
@@ -167,6 +181,37 @@ class BroadcastPushTest {
         assertTrue(result is BroadcastRegistrationResult.RetryableFailure)
         assertEquals(1, retry.scheduleCalls)
         assertEquals("", store.syncedToken)
+        assertEquals("RETRY_QUEUED", store.lastAttemptStatus)
+    }
+
+    @Test
+    fun `rejected registration response records HTTP status and never marks token synced`() = runBlocking {
+        val store = FakeRegistrationStore()
+        val client = FakeBackendClient(
+            nextResult = BroadcastRegistrationResult.Rejected(
+                statusCode = 200,
+                reason = "Notifications are disabled for this device.",
+                responseBody = """{"registered":false,"skipped":true}"""
+            )
+        )
+        val retry = FakeRetryScheduler()
+
+        val registrar = BroadcastDeviceRegistrar(
+            store = store,
+            backendClient = client,
+            retryScheduler = retry,
+            endpointProvider = { "https://nova-website-1tg.pages.dev/api/broadcast/devices/register" },
+            clientKeyProvider = { "" },
+            notificationsEnabledProvider = { true }
+        )
+
+        val result = registrar.registerDeviceToken("token-rejected")
+        assertTrue(result is BroadcastRegistrationResult.Rejected)
+        assertEquals(0, retry.scheduleCalls)
+        assertEquals("", store.syncedToken)
+        assertEquals("REJECTED", store.lastAttemptStatus)
+        assertEquals(200, store.lastAttemptHttpCode)
+        assertEquals("""{"registered":false,"skipped":true}""", store.lastAttemptResponse)
     }
 
     @Test

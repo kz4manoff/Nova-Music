@@ -36,8 +36,8 @@ object PermissionHelper {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun hasNotificationPermission(context: Context): Boolean {
-        val runtimeGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    fun hasPostNotificationsRuntimeGrant(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
@@ -45,7 +45,14 @@ object PermissionHelper {
         } else {
             true
         }
-        return runtimeGranted && NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+
+    fun areSystemNotificationsEnabled(context: Context): Boolean {
+        return NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+
+    fun hasNotificationPermission(context: Context): Boolean {
+        return hasPostNotificationsRuntimeGrant(context) && areSystemNotificationsEnabled(context)
     }
 
     fun hasBluetoothConnectPermission(context: Context): Boolean {

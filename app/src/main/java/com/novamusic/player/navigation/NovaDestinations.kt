@@ -16,6 +16,7 @@ object NovaDestinations {
     const val SETTINGS_EQUALIZER = "settings/equalizer"
     const val SETTINGS_HEADPHONES = "settings/headphones"
     const val SETTINGS_NOTIFICATIONS = "settings/notifications"
+    const val SETTINGS_FCM_DIAGNOSTICS = "settings/fcm-diagnostics"
     const val SETTINGS_LIBRARY = "settings/library"
     const val SETTINGS_DOWNLOADS = "settings/downloads"
     const val SETTINGS_STORAGE = "settings/storage"

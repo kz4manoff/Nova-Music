@@ -55,12 +55,24 @@ data class BroadcastRegistrationPayload(
 }
 
 sealed interface BroadcastRegistrationResult {
-    data class Success(val syncedAtMs: Long) : BroadcastRegistrationResult
+    data class Success(
+        val syncedAtMs: Long,
+        val httpStatus: Int = 200,
+        val responseBody: String = ""
+    ) : BroadcastRegistrationResult
     data object AlreadySynced : BroadcastRegistrationResult
     data class NotificationPermissionDenied(val reason: String) : BroadcastRegistrationResult
     data class NotConfigured(val reason: String) : BroadcastRegistrationResult
-    data class RetryableFailure(val reason: String) : BroadcastRegistrationResult
-    data class Rejected(val statusCode: Int, val reason: String) : BroadcastRegistrationResult
+    data class RetryableFailure(
+        val reason: String,
+        val httpStatus: Int = 0,
+        val responseBody: String = ""
+    ) : BroadcastRegistrationResult
+    data class Rejected(
+        val statusCode: Int,
+        val reason: String,
+        val responseBody: String = ""
+    ) : BroadcastRegistrationResult
 }
 
 interface BroadcastBackendClient {
@@ -77,6 +89,12 @@ interface BroadcastRegistrationStore {
     suspend fun getLastSyncedEndpointUrl(): String
     suspend fun getLastSyncedAppVersionCode(): Int
     suspend fun recordSynced(token: String, endpointUrl: String, versionCode: Int, syncedAtMs: Long)
+    suspend fun recordAttempt(
+        statusLabel: String,
+        httpCode: Int,
+        responsePreview: String,
+        attemptAtMs: Long
+    ) {}
 }
 
 interface BroadcastRetryScheduler {
@@ -142,6 +160,20 @@ class RepositoryBroadcastRegistrationStore(
             syncedAtMs = syncedAtMs
         )
     }
+
+    override suspend fun recordAttempt(
+        statusLabel: String,
+        httpCode: Int,
+        responsePreview: String,
+        attemptAtMs: Long
+    ) {
+        preferences.recordBackendRegistrationAttempt(
+            statusLabel = statusLabel,
+            httpCode = httpCode,
+            responsePreview = responsePreview,
+            attemptAtMs = attemptAtMs
+        )
+    }
 }
 
 class HttpBroadcastBackendClient : BroadcastBackendClient {
@@ -173,6 +205,7 @@ class HttpBroadcastBackendClient : BroadcastBackendClient {
 
             val trimmedKey = clientKey.trim()
             if (trimmedKey.isNotEmpty()) {
+                conn.setRequestProperty("X-Nova-App-Key", trimmedKey)
                 conn.setRequestProperty("Authorization", "Bearer $trimmedKey")
                 conn.setRequestProperty("X-Client-Key", trimmedKey)
             }
@@ -187,18 +220,48 @@ class HttpBroadcastBackendClient : BroadcastBackendClient {
             val status = conn.responseCode
             when {
                 status in 200..299 -> {
-                    BroadcastRegistrationResult.Success(syncedAtMs = System.currentTimeMillis())
+                    val responseText = runCatching {
+                        conn.inputStream?.bufferedReader()?.use { it.readText() }
+                    }.getOrNull().orEmpty().trim()
+                    val json = runCatching {
+                        if (responseText.isNotEmpty()) JSONObject(responseText) else null
+                    }.getOrNull()
+
+                    if (json != null && json.has("registered") && !json.optBoolean("registered", false)) {
+                        val serverReason = json.optString("reason")
+                            .ifBlank { json.optString("error") }
+                            .ifBlank { "Backend returned registered=false" }
+                        BroadcastRegistrationResult.Rejected(
+                            statusCode = status,
+                            reason = serverReason,
+                            responseBody = responseText.take(400)
+                        )
+                    } else {
+                        BroadcastRegistrationResult.Success(
+                            syncedAtMs = System.currentTimeMillis(),
+                            httpStatus = status,
+                            responseBody = responseText.take(400)
+                        )
+                    }
                 }
                 status == 408 || status == 429 || status in 500..599 -> {
-                    BroadcastRegistrationResult.RetryableFailure("Backend returned transient HTTP $status.")
+                    val errPreview = runCatching {
+                        conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(300)
+                    }.getOrNull().orEmpty()
+                    BroadcastRegistrationResult.RetryableFailure(
+                        reason = "Backend returned transient HTTP $status $errPreview".trim(),
+                        httpStatus = status,
+                        responseBody = errPreview
+                    )
                 }
                 else -> {
                     val errPreview = runCatching {
-                        conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(200)
+                        conn.errorStream?.bufferedReader()?.use { it.readText() }?.take(300)
                     }.getOrNull().orEmpty()
                     BroadcastRegistrationResult.Rejected(
                         statusCode = status,
-                        reason = "Backend rejected registration (HTTP $status) $errPreview".trim()
+                        reason = "Backend rejected registration (HTTP $status) $errPreview".trim(),
+                        responseBody = errPreview
                     )
                 }
             }
@@ -242,41 +305,46 @@ class BroadcastDeviceRegistrar(
 
     private val syncMutex = Mutex()
 
+    fun currentEndpointUrl(): String = endpointProvider().trim()
+
+    suspend fun getDeviceInstallationId(): String = store.getOrCreateDeviceId()
+
     suspend fun registerDeviceToken(
         fcmToken: String,
         force: Boolean = false
     ): BroadcastRegistrationResult = syncMutex.withLock {
+        val nowMs = System.currentTimeMillis()
         if (!notificationsEnabledProvider()) {
-            Log.i(
-                TAG,
-                "Notification permission not granted yet; deferring NOVA BROADCAST device registration."
-            )
-            return BroadcastRegistrationResult.NotificationPermissionDenied(
-                "POST_NOTIFICATIONS permission or app notifications must be enabled before registering device."
-            )
+            val reason = "POST_NOTIFICATIONS permission or app notifications must be enabled before registering device."
+            Log.i(TAG, "Notification permission not granted yet; deferring NOVA BROADCAST device registration.")
+            store.recordAttempt("PERMISSION_DENIED", 0, reason, nowMs)
+            return BroadcastRegistrationResult.NotificationPermissionDenied(reason)
         }
 
         val cleanToken = fcmToken.trim()
         if (cleanToken.isBlank()) {
-            return BroadcastRegistrationResult.NotConfigured("FCM token is unavailable.")
+            val reason = "FCM token is unavailable."
+            Log.w(TAG, "Skipping backend registration: $reason")
+            store.recordAttempt("TOKEN_UNAVAILABLE", 0, reason, nowMs)
+            return BroadcastRegistrationResult.NotConfigured(reason)
         }
 
         val endpointUrl = endpointProvider().trim()
         if (endpointUrl.isBlank()) {
-            Log.i(
+            val reason = "NOVA BROADCAST device registration endpoint is not configured."
+            Log.w(
                 TAG,
                 "NOVA BROADCAST endpoint is not configured (BuildConfig.BROADCAST_REGISTER_URL is empty); skipping backend sync."
             )
-            return BroadcastRegistrationResult.NotConfigured(
-                "NOVA BROADCAST device registration endpoint is not configured."
-            )
+            store.recordAttempt("NOT_CONFIGURED", 0, reason, nowMs)
+            return BroadcastRegistrationResult.NotConfigured(reason)
         }
 
         if (!BroadcastNotificationParser.isValidHttpsUrl(endpointUrl)) {
+            val reason = "NOVA BROADCAST device registration endpoint must use HTTPS."
             Log.w(TAG, "Refusing non-HTTPS NOVA BROADCAST registration endpoint: $endpointUrl")
-            return BroadcastRegistrationResult.NotConfigured(
-                "NOVA BROADCAST device registration endpoint must use HTTPS."
-            )
+            store.recordAttempt("INVALID_ENDPOINT", 0, reason, nowMs)
+            return BroadcastRegistrationResult.NotConfigured(reason)
         }
 
         val appVersionCode = versionCodeProvider()
@@ -289,6 +357,10 @@ class BroadcastDeviceRegistrar(
             lastSyncedUrl == endpointUrl &&
             lastSyncedVersion == appVersionCode
         ) {
+            Log.d(
+                TAG,
+                "Device already confirmed synced with $endpointUrl (token=${maskToken(cleanToken)}, versionCode=$appVersionCode)."
+            )
             return BroadcastRegistrationResult.AlreadySynced
         }
 
@@ -306,6 +378,11 @@ class BroadcastDeviceRegistrar(
             locale = localeProvider()
         )
 
+        Log.i(
+            TAG,
+            "POST $endpointUrl deviceId=${deviceId.take(8)}... token=${maskToken(cleanToken)} app=${payload.appVersionName}(${payload.appVersionCode}) sdk=${payload.sdkInt} notifications=${payload.notificationsEnabled}"
+        )
+
         return when (val result = backendClient.registerDevice(endpointUrl, clientKeyProvider(), payload)) {
             is BroadcastRegistrationResult.Success -> {
                 store.recordSynced(
@@ -314,15 +391,36 @@ class BroadcastDeviceRegistrar(
                     versionCode = appVersionCode,
                     syncedAtMs = result.syncedAtMs
                 )
-                Log.i(TAG, "Registered device $deviceId cleanly with NOVA BROADCAST backend.")
+                store.recordAttempt(
+                    statusLabel = "REGISTERED",
+                    httpCode = result.httpStatus,
+                    responsePreview = result.responseBody.ifBlank { "{\"registered\":true}" },
+                    attemptAtMs = result.syncedAtMs
+                )
+                Log.i(
+                    TAG,
+                    "Confirmed device registration HTTP ${result.httpStatus} at $endpointUrl (device=${deviceId.take(8)}..., body=${result.responseBody})"
+                )
                 result
             }
             is BroadcastRegistrationResult.RetryableFailure -> {
+                store.recordAttempt(
+                    statusLabel = "RETRY_QUEUED",
+                    httpCode = result.httpStatus,
+                    responsePreview = result.responseBody.ifBlank { result.reason },
+                    attemptAtMs = System.currentTimeMillis()
+                )
                 Log.w(TAG, "NOVA BROADCAST device registration deferred for retry: ${result.reason}")
                 retryScheduler.scheduleRetry()
                 result
             }
             is BroadcastRegistrationResult.Rejected -> {
+                store.recordAttempt(
+                    statusLabel = "REJECTED",
+                    httpCode = result.statusCode,
+                    responsePreview = result.responseBody.ifBlank { result.reason },
+                    attemptAtMs = System.currentTimeMillis()
+                )
                 Log.e(TAG, "NOVA BROADCAST rejected device registration (${result.statusCode}): ${result.reason}")
                 result
             }
@@ -334,5 +432,11 @@ class BroadcastDeviceRegistrar(
 
     companion object {
         private const val TAG = "NovaBroadcastRegistrar"
+
+        fun maskToken(token: String): String {
+            val trimmed = token.trim()
+            if (trimmed.length <= 14) return trimmed
+            return "${trimmed.take(8)}...${trimmed.takeLast(6)}"
+        }
     }
 }

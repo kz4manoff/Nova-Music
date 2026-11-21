@@ -2,6 +2,7 @@ package com.novamusic.player
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import com.novamusic.player.audio.AudioOutputManager
 import com.novamusic.player.audio.AudioPlayerManager
 import com.novamusic.player.audio.EqualizerManager
@@ -65,6 +66,7 @@ class NovaMusicApplication : Application() {
         NovaBroadcastNotificationHelper.ensureNotificationChannel(this)
         container = AppContainer(this)
         container.audioOutputManager.start()
+        Log.i("NovaMusicApp", "Application started; triggering automatic FCM registration sync.")
         container.fcmUpdatePushManager.ensureRegisteredAsync()
     }
 }

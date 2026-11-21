@@ -116,7 +116,7 @@ fun AppUpdatesSettingsPage(
             (context.applicationContext as? NovaMusicApplication)
                 ?.container
                 ?.fcmUpdatePushManager
-                ?.ensureRegisteredAsync()
+                ?.syncDeviceRegistrationAsync(force = true)
         } else {
             viewModel.openAppNotificationSettings(context)
         }

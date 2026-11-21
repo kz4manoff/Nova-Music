@@ -85,7 +85,11 @@ data class AppSettings(
     val lastSyncedBroadcastUrl: String = "",
     val lastSyncedAppVersionCode: Int = 0,
     val lastBackendSyncMs: Long = 0L,
-    val lastBroadcastMessageId: String = ""
+    val lastBroadcastMessageId: String = "",
+    val lastBroadcastRegStatus: String = "",
+    val lastBroadcastRegHttpCode: Int = 0,
+    val lastBroadcastRegResponse: String = "",
+    val lastBroadcastRegAttemptMs: Long = 0L
 )
 
 data class PlaybackPersistenceState(
@@ -181,6 +185,10 @@ class PreferencesRepository(private val context: Context) {
         val LAST_SYNCED_APP_VERSION_CODE = intPreferencesKey("last_synced_app_version_code")
         val LAST_BACKEND_SYNC_MS = longPreferencesKey("last_backend_sync_ms")
         val LAST_BROADCAST_MESSAGE_ID = stringPreferencesKey("last_broadcast_message_id")
+        val LAST_BROADCAST_REG_STATUS = stringPreferencesKey("last_broadcast_reg_status")
+        val LAST_BROADCAST_REG_HTTP_CODE = intPreferencesKey("last_broadcast_reg_http_code")
+        val LAST_BROADCAST_REG_RESPONSE = stringPreferencesKey("last_broadcast_reg_response")
+        val LAST_BROADCAST_REG_ATTEMPT_MS = longPreferencesKey("last_broadcast_reg_attempt_ms")
     }
 
     val appSettings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -247,7 +255,11 @@ class PreferencesRepository(private val context: Context) {
             lastSyncedBroadcastUrl = prefs[Keys.LAST_SYNCED_BROADCAST_URL] ?: "",
             lastSyncedAppVersionCode = prefs[Keys.LAST_SYNCED_APP_VERSION_CODE] ?: 0,
             lastBackendSyncMs = prefs[Keys.LAST_BACKEND_SYNC_MS] ?: 0L,
-            lastBroadcastMessageId = prefs[Keys.LAST_BROADCAST_MESSAGE_ID] ?: ""
+            lastBroadcastMessageId = prefs[Keys.LAST_BROADCAST_MESSAGE_ID] ?: "",
+            lastBroadcastRegStatus = prefs[Keys.LAST_BROADCAST_REG_STATUS] ?: "",
+            lastBroadcastRegHttpCode = prefs[Keys.LAST_BROADCAST_REG_HTTP_CODE] ?: 0,
+            lastBroadcastRegResponse = prefs[Keys.LAST_BROADCAST_REG_RESPONSE] ?: "",
+            lastBroadcastRegAttemptMs = prefs[Keys.LAST_BROADCAST_REG_ATTEMPT_MS] ?: 0L
         )
     }
 
@@ -591,6 +603,20 @@ class PreferencesRepository(private val context: Context) {
             prefs[Keys.LAST_SYNCED_BROADCAST_URL] = endpointUrl
             prefs[Keys.LAST_SYNCED_APP_VERSION_CODE] = versionCode
             prefs[Keys.LAST_BACKEND_SYNC_MS] = syncedAtMs
+        }
+    }
+
+    suspend fun recordBackendRegistrationAttempt(
+        statusLabel: String,
+        httpCode: Int,
+        responsePreview: String,
+        attemptAtMs: Long
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.LAST_BROADCAST_REG_STATUS] = statusLabel.take(64)
+            prefs[Keys.LAST_BROADCAST_REG_HTTP_CODE] = httpCode
+            prefs[Keys.LAST_BROADCAST_REG_RESPONSE] = responsePreview.take(400)
+            prefs[Keys.LAST_BROADCAST_REG_ATTEMPT_MS] = attemptAtMs
         }
     }
 

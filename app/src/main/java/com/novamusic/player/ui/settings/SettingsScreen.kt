@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AlternateEmail
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
@@ -112,6 +113,7 @@ fun SettingsScreen(
     onOpenAudioEqualizer: () -> Unit,
     onOpenHeadphones: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onOpenFcmDiagnostics: () -> Unit,
     onOpenLibraryManagement: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenStorage: () -> Unit,
@@ -127,6 +129,7 @@ fun SettingsScreen(
     val cacheSizeBytes by viewModel.cacheSizeBytes.collectAsStateWithLifecycle()
     val updateDownloadsSizeBytes by viewModel.updateDownloadsSizeBytes.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val fcmDiagnostics by viewModel.fcmDiagnostics.collectAsStateWithLifecycle()
 
     val reducedMotion = LocalReducedMotion.current
     val density = LocalDensity.current
@@ -135,6 +138,7 @@ fun SettingsScreen(
     LaunchedEffect(Unit) {
         entered = true
         viewModel.refreshStorageStats()
+        viewModel.refreshFcmDiagnostics()
     }
     val entranceAlpha by animateFloatAsState(
         targetValue = if (entered) 1f else 0f,
@@ -314,6 +318,15 @@ fun SettingsScreen(
                         statusBadge = updatesBadge,
                         highlightIcon = updateState is UpdateUiState.Available || updateState is UpdateUiState.ReadyToInstall,
                         onClick = onOpenAppUpdates
+                    )
+                    NovaSettingsDivider()
+                    NovaSettingsCategoryRow(
+                        icon = Icons.Rounded.BugReport,
+                        title = "FCM & Broadcast Diagnostics",
+                        description = "Firebase init, push token status, HTTP sync logs & manual device sync",
+                        statusBadge = if (fcmDiagnostics.isRegisteredConfirmed) "Registered" else fcmDiagnostics.registrationStatus,
+                        highlightIcon = !fcmDiagnostics.isRegisteredConfirmed,
+                        onClick = onOpenFcmDiagnostics
                     )
                     NovaSettingsDivider()
                     NovaSettingsCategoryRow(

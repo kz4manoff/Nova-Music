@@ -31,22 +31,22 @@ val hasReleaseSigning = !releaseStorePath.isNullOrBlank() &&
 
 val resolvedVersionCode = (findProperty("NOVA_VERSION_CODE") as String?)?.toIntOrNull()
     ?: System.getenv("NOVA_VERSION_CODE")?.toIntOrNull()
-    ?: 26
+    ?: 27
 
 val resolvedVersionName = (findProperty("NOVA_VERSION_NAME") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_VERSION_NAME")?.takeIf { it.isNotBlank() }
-    ?: "1.2.6"
+    ?: "1.2.7"
 
 val resolvedUpdateConfigUrl = (findProperty("NOVA_UPDATE_CONFIG_URL") as String?)?.takeIf { it.isNotBlank() }
     ?: System.getenv("NOVA_UPDATE_CONFIG_URL")?.takeIf { it.isNotBlank() }
     ?: "https://nova-website-1tg.pages.dev/update.json"
 
-val resolvedBroadcastRegisterUrl = (findProperty("NOVA_BROADCAST_REGISTER_URL") as String?)?.trim()
-    ?: System.getenv("NOVA_BROADCAST_REGISTER_URL")?.trim()
-    ?: ""
+val resolvedBroadcastRegisterUrl = System.getenv("NOVA_BROADCAST_REGISTER_URL")?.takeIf { it.isNotBlank() }?.trim()
+    ?: (findProperty("NOVA_BROADCAST_REGISTER_URL") as String?)?.takeIf { it.isNotBlank() }?.trim()
+    ?: "https://nova-website-1tg.pages.dev/api/broadcast/devices/register"
 
-val resolvedBroadcastClientKey = (findProperty("NOVA_BROADCAST_CLIENT_KEY") as String?)?.trim()
-    ?: System.getenv("NOVA_BROADCAST_CLIENT_KEY")?.trim()
+val resolvedBroadcastClientKey = System.getenv("NOVA_BROADCAST_CLIENT_KEY")?.takeIf { it.isNotBlank() }?.trim()
+    ?: (findProperty("NOVA_BROADCAST_CLIENT_KEY") as String?)?.takeIf { it.isNotBlank() }?.trim()
     ?: ""
 
 base {

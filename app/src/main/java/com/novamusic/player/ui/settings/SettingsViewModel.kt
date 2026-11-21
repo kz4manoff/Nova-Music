@@ -35,6 +35,8 @@ import com.novamusic.player.data.preferences.PreferencesRepository
 import com.novamusic.player.data.repository.MusicRepository
 import com.novamusic.player.database.entities.CustomPresetEntity
 import com.novamusic.player.update.AndroidApkInstaller
+import com.novamusic.player.update.FcmDiagnosticsSnapshot
+import com.novamusic.player.update.FcmUpdatePushManager
 import com.novamusic.player.update.UpdateConfig
 import com.novamusic.player.update.UpdateManager
 import com.novamusic.player.update.UpdateUiState
@@ -63,7 +65,8 @@ class SettingsViewModel(
     private val playerManager: AudioPlayerManager,
     private val equalizerManager: EqualizerManager,
     private val audioOutputManager: AudioOutputManager,
-    private val updateManager: UpdateManager
+    private val updateManager: UpdateManager,
+    private val fcmUpdatePushManager: FcmUpdatePushManager
 ) : ViewModel() {
 
     val appSettings: StateFlow<AppSettings> = preferences.appSettings
@@ -78,6 +81,7 @@ class SettingsViewModel(
     val playerState: StateFlow<PlayerUiState> = playerManager.playerState
     val audioRoutingState: StateFlow<AudioRoutingUiState> = audioOutputManager.routingState
     val updateState: StateFlow<UpdateUiState> = updateManager.uiState
+    val fcmDiagnostics: StateFlow<FcmDiagnosticsSnapshot> = fcmUpdatePushManager.diagnosticsState
 
     val availableFolders: StateFlow<List<MusicFolder>> = repository.availableFolders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -423,4 +427,13 @@ class SettingsViewModel(
     fun canRequestPackageInstalls(): Boolean = apkInstaller.canRequestPackageInstalls()
 
     fun buildInstallPermissionIntent(): Intent = updateManager.buildInstallPermissionIntent()
+
+    // 9. FCM & Broadcast Diagnostics
+    fun refreshFcmDiagnostics() {
+        fcmUpdatePushManager.refreshDiagnosticsAsync()
+    }
+
+    fun syncFcmDeviceRegistration(force: Boolean = true) {
+        fcmUpdatePushManager.syncDeviceRegistrationAsync(force = force)
+    }
 }
